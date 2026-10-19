@@ -878,3 +878,65 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; padding:
   .stat { flex-direction: row; align-items: center; }
 }
 .mensal-form { display: flex; flex-direction: column; gap: 16px; }
+
+/* ============ Equipe: atividades e usuários ============ */
+.atividades, .usuarios { display: flex; flex-direction: column; gap: 14px; }
+.resumo-equipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.resumo-pessoa {
+  display: flex; align-items: center; gap: 12px; padding: 12px; text-align: left;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); transition: all .15s;
+}
+.resumo-pessoa:hover { border-color: var(--border-strong); }
+.resumo-pessoa.ativo { border-color: var(--primary); background: var(--primary-soft); }
+.resumo-pessoa strong, .resumo-pessoa span { display: block; }
+.dia-grupo { display: flex; flex-direction: column; gap: 8px; }
+.dia-titulo { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: none; }
+.feed { padding: 4px; }
+.feed-item + .feed-item { border-top: 1px solid var(--border); }
+.feed-linha {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; border: none; background: none;
+  text-align: left; border-radius: 10px; position: relative;
+}
+.feed-linha:not(:disabled):hover { background: var(--surface-2); }
+.feed-linha:disabled { cursor: default; color: inherit; }
+.feed-icone {
+  position: absolute; left: 34px; top: 30px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--text-2);
+}
+.ac-criou .feed-icone { color: var(--success); }
+.ac-excluiu .feed-icone { color: var(--danger); }
+.ac-concluiu .feed-icone { color: var(--success); }
+.ac-entrou .feed-icone { color: var(--info); }
+.feed-texto { font-size: 14px; line-height: 1.4; }
+.feed-empresa { color: var(--primary); font-weight: 600; }
+.ac-excluiu .feed-texto b:last-of-type { text-decoration: line-through; text-decoration-color: var(--danger); }
+.feed-hora { flex-shrink: 0; }
+.feed-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
+.feed-seta.aberta { transform: rotate(180deg); }
+.feed-detalhe { display: flex; flex-direction: column; gap: 6px; margin: 0 10px 12px 54px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+.mud-linha { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.mud-campo { font-weight: 700; min-width: 140px; }
+.mud-de { color: var(--danger); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger) 50%, transparent); overflow-wrap: anywhere; }
+.mud-para { color: var(--success); font-weight: 600; overflow-wrap: anywhere; }
+.lista-usuarios { padding: 6px; }
+.usuario-linha { display: flex; align-items: center; gap: 12px; padding: 10px; flex-wrap: wrap; }
+.usuario-linha + .usuario-linha { border-top: 1px solid var(--border); }
+.usuario-linha.inativo { opacity: .6; }
+.usuario-info { display: flex; flex-direction: column; min-width: 160px; }
+.usuario-nome { border: 1px solid transparent; background: none; font-weight: 700; font-size: 15px; padding: 3px 6px; margin-left: -6px; border-radius: 8px; outline: none; }
+.usuario-nome:hover { border-color: var(--border); }
+.usuario-nome:focus { border-color: var(--primary); background: var(--surface); }
+.usuario-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.usuario-acoes .seg button { display: inline-flex; align-items: center; gap: 4px; }
+.usuario-acoes .seg button:disabled { cursor: not-allowed; opacity: .7; }
+.permissoes h3 { margin-bottom: 12px; }
+.perm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.perm-grid > div { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
+.perm-grid strong { display: flex; align-items: center; gap: 6px; color: var(--primary); }
+.perm-grid span { color: var(--text-2); }
+@media (max-width: 860px) {
+  .perm-grid { grid-template-columns: 1fr; }
+  .usuario-acoes { width: 100%; }
+  .feed-detalhe { margin-left: 10px; }
+  .mud-campo { min-width: 0; width: 100%; }
+}

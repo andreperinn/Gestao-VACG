@@ -38,7 +38,7 @@ const vazia = () => ({
 });
 
 export default function EmpresaForm({ open, onClose, empresa, tabInicial }) {
-  const { salvarEmpresa, salvarEventos, eventos } = useStore();
+  const { salvarEmpresa, salvarEventos, eventos, ehAdmin } = useStore();
   const { toast } = useUI();
   const [f, setF] = useState(vazia);
   const [tab, setTab] = useState('dados');
@@ -124,7 +124,7 @@ export default function EmpresaForm({ open, onClose, empresa, tabInicial }) {
     { id: 'contato', label: 'Endereço e mapa', icon: MapPin },
     { id: 'condicionantes', label: 'Condicionantes', icon: ClipboardCheck, count: f.condicionantes.length },
     { id: 'servicos', label: 'Serviços', icon: Briefcase, count: f.servicos.length },
-    { id: 'mensalidade', label: 'Mensalidade', icon: Wallet },
+    ...(ehAdmin ? [{ id: 'mensalidade', label: 'Mensalidade', icon: Wallet }] : []),
     { id: 'documentos', label: 'Documentos', icon: Paperclip, count: f.anexos.length },
   ];
 

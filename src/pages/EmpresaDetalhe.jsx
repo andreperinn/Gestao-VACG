@@ -15,7 +15,7 @@ import { ServicosTab, MensalidadeTab, DocumentosTab } from './EmpresaAbas';
 import { mesesAtrasados } from '../mensalidade';
 
 export default function EmpresaDetalhe({ id }) {
-  const { empresaPorId, eventos, excluirEmpresa } = useStore();
+  const { empresaPorId, eventos, excluirEmpresa, ehAdmin } = useStore();
   const { abrirEmpresa, abrirEvento } = useModais();
   const { confirm, toast } = useUI();
   const [tab, setTab] = useState('geral');
@@ -39,7 +39,7 @@ export default function EmpresaDetalhe({ id }) {
   const nAlerta = abertos.filter((x) => statusEvento(x) === 'alerta').length;
   const cumpridas = conds.filter((c) => c.status === 'cumprida').length;
   const tel = soDigitos(e.telefone);
-  const atrasadas = mesesAtrasados(e.mensalidade);
+  const atrasadas = ehAdmin ? mesesAtrasados(e.mensalidade) : [];
 
   const excluir = async () => {
     const ok = await confirm({
@@ -59,7 +59,7 @@ export default function EmpresaDetalhe({ id }) {
     { id: 'condicionantes', label: 'Condicionantes', icon: ClipboardCheck, count: conds.length },
     { id: 'eventos', label: 'Eventos', icon: CalendarClock, count: abertos.length },
     { id: 'servicos', label: 'Serviços', icon: Briefcase, count: (e.servicos || []).length },
-    { id: 'mensalidade', label: 'Mensalidade', icon: Wallet, count: atrasadas.length || null },
+    ...(ehAdmin ? [{ id: 'mensalidade', label: 'Mensalidade', icon: Wallet, count: atrasadas.length || null }] : []),
     { id: 'documentos', label: 'Documentos', icon: Paperclip, count: (e.anexos || []).length },
     { id: 'historico', label: 'Histórico', icon: Clock },
   ];
@@ -105,7 +105,7 @@ export default function EmpresaDetalhe({ id }) {
         <EventosTab evs={evs} onNovo={() => abrirEvento({ empresaId: e.id })} />
       )}
       {tab === 'servicos' && <ServicosTab e={e} />}
-      {tab === 'mensalidade' && <MensalidadeTab e={e} />}
+      {tab === 'mensalidade' && ehAdmin && <MensalidadeTab e={e} />}
       {tab === 'documentos' && <DocumentosTab e={e} />}
       {tab === 'historico' && <Historico evs={evs} />}
     </div>

@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react';
 import {
-  Download, Upload, RotateCcw, Eraser, Database, Building2, CalendarClock, ClipboardCheck, Info, Cloud, CloudUpload, LogOut, HardDrive,
+  Download, Upload, RotateCcw, Eraser, Database, Building2, CalendarClock, ClipboardCheck, Info, Cloud, CloudUpload, LogOut, HardDrive, KeyRound,
 } from 'lucide-react';
 import { useStore, lerLocal } from '../store';
 import { useUI } from '../components/ui';
+import { AlterarSenha } from './Login';
 import { hojeISO } from '../utils';
 
 export default function Dados() {
-  const { empresas, eventos, importar, carregarExemplo, limparTudo, nuvem, usuario, sair, enviarLocalParaNuvem } = useStore();
+  const { empresas, eventos, importar, carregarExemplo, limparTudo, nuvem, usuario, perfil, ehAdmin, sair, enviarLocalParaNuvem } = useStore();
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
   const { toast, confirm } = useUI();
   const inputRef = useRef(null);
   const [ocupado, setOcupado] = useState(false);
@@ -94,12 +96,14 @@ export default function Dados() {
 
       {nuvem && (
         <div className="card conta-card">
-          <div className="conta-avatar">{usuario?.email?.[0]?.toUpperCase()}</div>
+          <div className="conta-avatar">{(perfil?.nome || usuario?.email || '?')[0].toUpperCase()}</div>
           <div className="grow">
-            <strong>{usuario?.email}</strong>
-            <span className="muted small"><Cloud size={13} /> Conectado — dados sincronizados na nuvem</span>
+            <strong>{perfil?.nome || usuario?.email}</strong>
+            <span className="muted small"><Cloud size={13} /> {usuario?.email} · {ehAdmin ? 'Administrador' : 'Colaborador'}</span>
           </div>
+          <button className="btn" onClick={() => setTrocandoSenha(true)}><KeyRound size={16} /> Alterar senha</button>
           <button className="btn" onClick={sair}><LogOut size={16} /> Sair</button>
+          <AlterarSenha open={trocandoSenha} onClose={() => setTrocandoSenha(false)} />
         </div>
       )}
 
@@ -135,21 +139,26 @@ export default function Dados() {
           <strong>Baixar backup</strong>
           <span className="muted small">Salva um .json com os dados (os documentos anexados não entram)</span>
         </button>
-        <button className="action-card" onClick={() => inputRef.current?.click()} disabled={ocupado}>
-          <div className="kpi-icon" style={{ '--c': '#2563eb' }}><Upload size={22} /></div>
-          <strong>Restaurar backup</strong>
-          <span className="muted small">Carrega um arquivo de backup salvo antes</span>
-        </button>
-        <button className="action-card" onClick={exemplo} disabled={ocupado}>
-          <div className="kpi-icon" style={{ '--c': '#d97706' }}><RotateCcw size={22} /></div>
-          <strong>Dados de exemplo</strong>
-          <span className="muted small">Carrega empresas fictícias para testes</span>
-        </button>
-        <button className="action-card danger" onClick={limpar} disabled={ocupado}>
-          <div className="kpi-icon" style={{ '--c': '#dc2626' }}><Eraser size={22} /></div>
-          <strong>Apagar tudo</strong>
-          <span className="muted small">Começar do zero com o sistema vazio</span>
-        </button>
+        {/* Ações que substituem ou apagam tudo: só administrador */}
+        {ehAdmin && (
+          <>
+            <button className="action-card" onClick={() => inputRef.current?.click()} disabled={ocupado}>
+              <div className="kpi-icon" style={{ '--c': '#2563eb' }}><Upload size={22} /></div>
+              <strong>Restaurar backup</strong>
+              <span className="muted small">Carrega um arquivo de backup salvo antes</span>
+            </button>
+            <button className="action-card" onClick={exemplo} disabled={ocupado}>
+              <div className="kpi-icon" style={{ '--c': '#d97706' }}><RotateCcw size={22} /></div>
+              <strong>Dados de exemplo</strong>
+              <span className="muted small">Carrega empresas fictícias para testes</span>
+            </button>
+            <button className="action-card danger" onClick={limpar} disabled={ocupado}>
+              <div className="kpi-icon" style={{ '--c': '#dc2626' }}><Eraser size={22} /></div>
+              <strong>Apagar tudo</strong>
+              <span className="muted small">Começar do zero com o sistema vazio</span>
+            </button>
+          </>
+        )}
       </div>
       <input ref={inputRef} type="file" accept="application/json,.json" hidden onChange={aoEscolherArquivo} />
       <p className="muted small mt">

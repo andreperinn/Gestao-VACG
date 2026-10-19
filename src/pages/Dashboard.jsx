@@ -16,7 +16,7 @@ function saudacao() {
 }
 
 export default function Dashboard() {
-  const { empresas, eventos, exemplo } = useStore();
+  const { empresas, eventos, exemplo, ehAdmin } = useStore();
   const { abrirEmpresa, abrirEvento } = useModais();
 
   const dados = useMemo(() => {
@@ -205,7 +205,7 @@ export default function Dashboard() {
           </p>
         </section>
 
-        <section className="card">
+        {ehAdmin && (<section className="card">
           <div className="card-head">
             <h2><Wallet size={18} /> Mensalidades · {MESES[new Date().getMonth()].toLowerCase()}</h2>
           </div>
@@ -238,7 +238,7 @@ export default function Dashboard() {
               )}
             </>
           )}
-        </section>
+        </section>)}
       </div>
     </div>
   );

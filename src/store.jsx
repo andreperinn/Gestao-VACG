@@ -41,6 +41,8 @@ export function StoreProvider({ children }) {
   // iniciando → sem-sessao | carregando → pronto
   const [fase, setFase] = useState(NUVEM ? 'iniciando' : 'pronto');
   const [recuperandoSenha, setRecuperandoSenha] = useState(false);
+  // No modo local não há login: quem usa é tratado como administrador
+  const [perfil, setPerfil] = useState(NUVEM ? null : { nome: 'Modo local', papel: 'admin', ativo: true });
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -61,6 +63,8 @@ export function StoreProvider({ children }) {
       if (!s) {
         setFase('sem-sessao');
         setState(VAZIO);
+        setPerfil(null);
+        db.definirFinanceiro(false);
       }
     });
     return () => sub.subscription.unsubscribe();
@@ -77,14 +81,37 @@ export function StoreProvider({ children }) {
     }
   }, [toast]);
 
-  // Ao entrar: carrega tudo e passa a ouvir mudanças feitas em outros aparelhos
+  // Ao entrar: carrega o perfil (admin/colaborador), depois os dados,
+  // e passa a ouvir mudanças feitas em outros aparelhos
   const userId = sessao?.user?.id;
   useEffect(() => {
     if (!NUVEM || !userId) return;
+    let vivo = true;
+    let desligar = () => {};
     setFase((f) => (f === 'pronto' ? f : 'carregando'));
-    recarregar();
-    return db.assinarMudancas(recarregar);
-  }, [userId, recarregar]);
+    (async () => {
+      let p = null;
+      try {
+        p = await db.carregarMeuPerfil(userId);
+      } catch (e) {
+        toast(`Erro ao carregar o perfil: ${e.message}`, 'error');
+      }
+      if (!vivo) return;
+      if (!p?.ativo) {
+        setPerfil(p);
+        setFase('bloqueado');
+        return;
+      }
+      setPerfil(p);
+      db.definirFinanceiro(p.papel === 'admin');
+      await recarregar();
+      if (vivo) desligar = db.assinarMudancas(recarregar);
+    })();
+    return () => {
+      vivo = false;
+      desligar();
+    };
+  }, [userId, recarregar, toast]);
 
   const api = useMemo(() => {
     const upsert = (lista, item) =>
@@ -225,8 +252,12 @@ export function StoreProvider({ children }) {
         return local.empresas.length;
       },
       async entrar(email, senha) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw new Error(traduzirErro(error.message));
+        // Registra a entrada para o administrador acompanhar (sem travar o login se falhar)
+        db.carregarMeuPerfil(data.user.id)
+          .then((p) => p?.ativo && db.registrarEntrada(data.user.id, p.nome || email))
+          .catch(() => {});
       },
       async esqueciSenha(email) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
@@ -251,10 +282,13 @@ export function StoreProvider({ children }) {
       nuvem: NUVEM,
       fase,
       usuario: sessao?.user ?? null,
+      perfil,
+      // Administrador vê o financeiro (mensalidades) e o registro de atividades
+      ehAdmin: perfil?.papel === 'admin',
       recuperandoSenha,
       ...api,
     };
-  }, [state, api, fase, sessao, recuperandoSenha]);
+  }, [state, api, fase, sessao, recuperandoSenha, perfil]);
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

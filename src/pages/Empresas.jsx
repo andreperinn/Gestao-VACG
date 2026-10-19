@@ -17,7 +17,7 @@ function lerVisao() {
 }
 
 export default function Empresas() {
-  const { empresas, eventos } = useStore();
+  const { empresas, eventos, ehAdmin } = useStore();
   const { abrirEmpresa } = useModais();
   const [q, setQ] = useState('');
   const [filtro, setFiltro] = useState('todas');
@@ -42,10 +42,10 @@ export default function Empresas() {
         nCond: conds.length,
         nCondAbertas: conds.filter((c) => c.status !== 'cumprida').length,
         proximo,
-        nAtrasadas: mesesAtrasados(e.mensalidade).length,
+        nAtrasadas: ehAdmin ? mesesAtrasados(e.mensalidade).length : 0,
       };
     });
-  }, [empresas, eventos]);
+  }, [empresas, eventos, ehAdmin]);
 
   const contagem = {
     todas: lista.length,

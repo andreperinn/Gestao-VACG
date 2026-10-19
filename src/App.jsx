@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  LayoutDashboard, Building2, CalendarDays, BellRing, Database, Leaf, Plus, Search, CalendarPlus, X, LogOut, Cloud, HardDrive,
+  LayoutDashboard, Building2, CalendarDays, BellRing, Database, Leaf, Plus, Search, CalendarPlus, X, LogOut, Cloud, HardDrive, Users, KeyRound,
 } from 'lucide-react';
 import { useRoute, navigate } from './router';
 import { useStore } from './store';
@@ -14,13 +14,15 @@ import EmpresaDetalhe from './pages/EmpresaDetalhe';
 import Agenda from './pages/Agenda';
 import Alertas from './pages/Alertas';
 import Dados from './pages/Dados';
-import Login, { NovaSenha, Carregando } from './pages/Login';
+import Login, { NovaSenha, Carregando, Bloqueado, AlterarSenha } from './pages/Login';
+import Equipe from './pages/Equipe';
 
 export default function App() {
   const { nuvem, fase, recuperandoSenha } = useStore();
   if (nuvem) {
     if (recuperandoSenha) return <NovaSenha />;
     if (fase === 'sem-sessao') return <Login />;
+    if (fase === 'bloqueado') return <Bloqueado />;
     if (fase !== 'pronto') return <Carregando />;
   }
   return (
@@ -36,11 +38,12 @@ const NAV = [
   { path: '/agenda', label: 'Agenda', icon: CalendarDays },
   { path: '/alertas', label: 'Alertas', icon: BellRing, badge: true },
   { path: '/dados', label: 'Dados', icon: Database },
+  { path: '/equipe', label: 'Equipe', icon: Users, admin: true },
 ];
 
 function Shell() {
   const rota = useRoute();
-  const { eventos } = useStore();
+  const { eventos, ehAdmin, nuvem } = useStore();
   const { abrirEmpresa, abrirEvento } = useModais();
   const [menuNovo, setMenuNovo] = useState(false);
 
@@ -54,6 +57,7 @@ function Shell() {
   else if (partes[0] === 'agenda') pagina = <Agenda />;
   else if (partes[0] === 'alertas') pagina = <Alertas filtroInicial={partes[1]} />;
   else if (partes[0] === 'dados') pagina = <Dados />;
+  else if (partes[0] === 'equipe' && ehAdmin && nuvem) pagina = <Equipe />;
   else pagina = <Dashboard />;
 
   const novo = (tipo) => {
@@ -76,7 +80,7 @@ function Shell() {
           <Plus size={18} /> Novo cadastro
         </button>
         <nav className="nav">
-          {NAV.map((n) => (
+          {NAV.filter((n) => !n.admin || (ehAdmin && nuvem)).map((n) => (
             <a key={n.path} href={`#${n.path}`} className={`nav-item${base === n.path ? ' active' : ''}`}>
               <n.icon size={19} />
               <span>{n.label}</span>
@@ -144,8 +148,9 @@ function Shell() {
 }
 
 function ContaRodape() {
-  const { nuvem, usuario, sair } = useStore();
+  const { nuvem, usuario, perfil, ehAdmin, sair } = useStore();
   const { confirm } = useUI();
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
   if (!nuvem) {
     return (
       <a href="#/dados" className="conta conta-local" title="Os dados estão salvos só neste navegador">
@@ -158,17 +163,20 @@ function ContaRodape() {
     );
   }
   const email = usuario?.email || '';
+  const nome = perfil?.nome || email;
   const sairConfirmando = async () => {
     if (await confirm({ title: 'Sair do sistema?', message: 'Você precisará entrar com e-mail e senha novamente.', confirmLabel: 'Sair', danger: false })) sair();
   };
   return (
     <div className="conta">
-      <div className="conta-avatar">{email[0]?.toUpperCase()}</div>
+      <div className="conta-avatar">{nome[0]?.toUpperCase()}</div>
       <div className="grow">
-        <strong title={email}>{email}</strong>
-        <span><Cloud size={12} /> Sincronizado</span>
+        <strong title={email}>{nome}</strong>
+        <span><Cloud size={12} /> {ehAdmin ? 'Administrador' : 'Colaborador'}</span>
       </div>
+      <button className="icon-btn" onClick={() => setTrocandoSenha(true)} title="Alterar minha senha"><KeyRound size={16} /></button>
       <button className="icon-btn" onClick={sairConfirmando} title="Sair"><LogOut size={17} /></button>
+      <AlterarSenha open={trocandoSenha} onClose={() => setTrocandoSenha(false)} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Leaf, Mail, Lock, LogIn, ArrowLeft, KeyRound, ShieldCheck, FlaskConical, CalendarClock } from 'lucide-react';
 import { useStore } from '../store';
-import { Field, useUI } from '../components/ui';
+import { Field, Modal, useUI } from '../components/ui';
 
 export default function Login() {
   const { entrar, esqueciSenha } = useStore();
@@ -126,6 +126,80 @@ export function NovaSenha() {
         </form>
       </div>
     </div>
+  );
+}
+
+// Usuário com perfil desativado pelo administrador
+export function Bloqueado() {
+  const { sair, usuario } = useStore();
+  return (
+    <div className="login">
+      <div className="login-main">
+        <div className="login-card">
+          <div className="empty-icon"><Lock size={28} /></div>
+          <h2>Acesso desativado</h2>
+          <p className="muted">
+            O acesso de <b>{usuario?.email}</b> está desativado. Fale com o administrador do sistema.
+          </p>
+          <button className="btn btn-block btn-lg" onClick={sair}>Sair</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Troca de senha do próprio usuário logado
+export function AlterarSenha({ open, onClose }) {
+  const { definirSenha } = useStore();
+  const { toast } = useUI();
+  const [senha, setSenha] = useState('');
+  const [confirma, setConfirma] = useState('');
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const fechar = () => {
+    setSenha('');
+    setConfirma('');
+    setErro('');
+    onClose();
+  };
+
+  const salvar = async (e) => {
+    e.preventDefault();
+    if (senha.length < 6) return setErro('A senha precisa ter pelo menos 6 caracteres');
+    if (senha !== confirma) return setErro('As senhas não conferem');
+    setSalvando(true);
+    try {
+      await definirSenha(senha);
+      toast('Senha alterada com sucesso');
+      fechar();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={fechar} size="sm" icon={<KeyRound size={20} />} title="Alterar minha senha"
+      footer={
+        <>
+          <button type="button" className="btn" onClick={fechar}>Cancelar</button>
+          <button type="submit" form="form-senha" className="btn btn-primary" disabled={salvando}>
+            {salvando ? 'Salvando…' : 'Salvar senha'}
+          </button>
+        </>
+      }>
+      <form id="form-senha" className="form-body" onSubmit={salvar}>
+        <Field label="Nova senha" icon={<Lock size={14} />}>
+          <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" autoFocus />
+        </Field>
+        <Field label="Confirme a nova senha" icon={<Lock size={14} />}>
+          <input type="password" value={confirma} onChange={(e) => setConfirma(e.target.value)} autoComplete="new-password" />
+        </Field>
+        {erro && <div className="login-erro">{erro}</div>}
+      </form>
+    </Modal>
   );
 }
 

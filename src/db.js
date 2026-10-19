@@ -40,11 +40,10 @@ const empresaParaDb = (e) => ({
   latitude: e.localizacao?.lat ?? null,
   longitude: e.localizacao?.lng ?? null,
   servicos: e.servicos || [],
-  mensalidade: e.mensalidade || null,
   ...(e.criadoEm && { criado_em: e.criadoEm }),
 });
 
-const empresaDoDb = (r, condicionantes, anexos) => ({
+const empresaDoDb = (r, condicionantes, anexos, mensalidade) => ({
   id: r.id,
   razaoSocial: txt(r.razao_social),
   nomeFantasia: txt(r.nome_fantasia),
@@ -66,7 +65,7 @@ const empresaDoDb = (r, condicionantes, anexos) => ({
   atualizadoEm: r.atualizado_em,
   localizacao: r.latitude != null && r.longitude != null ? { lat: r.latitude, lng: r.longitude } : null,
   servicos: r.servicos || [],
-  mensalidade: r.mensalidade || null,
+  mensalidade: mensalidade || null,
   condicionantes,
   anexos,
 });
@@ -173,20 +172,60 @@ async function upsertEmLotes(tabela, linhas) {
 
 // ---------- Operações ----------
 export async function carregarTudo() {
-  const [emp, cond, ev, anx] = await Promise.all([
+  const [emp, cond, ev, anx, mens] = await Promise.all([
     selecionarTodos('empresas', 'razao_social'),
     selecionarTodos('condicionantes', 'ordem'),
     selecionarTodos('eventos', 'data_vencimento'),
     selecionarTodos('anexos', 'enviado_em'),
+    // Para quem não é administrador o banco devolve vazio (regra de segurança)
+    financeiro ? selecionarTodos('mensalidades', 'empresa_id') : Promise.resolve([]),
   ]);
   const porEmpresa = {};
   cond.forEach((c) => (porEmpresa[c.empresa_id] ||= []).push(condDoDb(c)));
   const anexosPorEmpresa = {};
   anx.forEach((a) => (anexosPorEmpresa[a.empresa_id] ||= []).push(anexoDoDb(a)));
+  const mensPorEmpresa = Object.fromEntries(mens.map((m) => [m.empresa_id, m.dados]));
   return {
-    empresas: emp.map((r) => empresaDoDb(r, porEmpresa[r.id] || [], anexosPorEmpresa[r.id] || [])),
+    empresas: emp.map((r) => empresaDoDb(r, porEmpresa[r.id] || [], anexosPorEmpresa[r.id] || [], mensPorEmpresa[r.id])),
     eventos: ev.map(eventoDoDb),
   };
+}
+
+// ---------- Perfil e permissões ----------
+// Só administradores leem e gravam mensalidades (o banco também bloqueia)
+let financeiro = false;
+export const definirFinanceiro = (v) => (financeiro = v);
+
+export async function carregarMeuPerfil(userId) {
+  return ok(await supabase.from('perfis').select('*').eq('user_id', userId).maybeSingle());
+}
+
+export async function carregarPerfis() {
+  return ok(await supabase.from('perfis').select('*').order('nome'));
+}
+
+export async function salvarPerfil(p) {
+  ok(await supabase.from('perfis').update({ nome: p.nome, papel: p.papel, ativo: p.ativo }).eq('user_id', p.user_id));
+}
+
+// ---------- Registro de atividades (só administradores leem) ----------
+export async function registrarEntrada(userId, nome) {
+  await supabase.from('atividades').insert({ user_id: userId, usuario: nome, acao: 'entrou', descricao: 'Entrou no sistema' });
+}
+
+export async function carregarAtividades({ userId, desde, limite = 200 } = {}) {
+  let q = supabase.from('atividades').select('*').order('criado_em', { ascending: false }).limit(limite);
+  if (userId) q = q.eq('user_id', userId);
+  if (desde) q = q.gte('criado_em', desde);
+  return ok(await q);
+}
+
+export function assinarAtividades(aoMudar) {
+  const canal = supabase
+    .channel('vacg-atividades')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'atividades' }, aoMudar)
+    .subscribe();
+  return () => supabase.removeChannel(canal);
 }
 
 // Grava as linhas filhas da empresa e apaga as que foram removidas no app
@@ -201,6 +240,9 @@ export async function salvarEmpresa(e) {
   ok(await supabase.from('empresas').upsert(empresaParaDb(e)));
   await sincronizarFilhos('condicionantes', e.id, (e.condicionantes || []).map((c, i) => condParaDb(e.id, c, i)));
   await sincronizarFilhos('anexos', e.id, (e.anexos || []).map((a) => anexoParaDb(e.id, a)));
+  if (financeiro && e.mensalidade) {
+    ok(await supabase.from('mensalidades').upsert({ empresa_id: e.id, dados: e.mensalidade }));
+  }
 }
 
 export async function salvarCondicionante(empresaId, c, ordem) {
@@ -245,6 +287,9 @@ export async function mesclar({ empresas, eventos }) {
   await upsertEmLotes('empresas', empresas.map(empresaParaDb));
   await upsertEmLotes('condicionantes', conds);
   await upsertEmLotes('anexos', anexos);
+  if (financeiro) {
+    await upsertEmLotes('mensalidades', empresas.filter((e) => e.mensalidade).map((e) => ({ empresa_id: e.id, dados: e.mensalidade })));
+  }
   await upsertEmLotes(
     'eventos',
     eventos
@@ -269,7 +314,7 @@ export function assinarMudancas(aoMudar) {
     }, 700);
   };
   const canal = supabase.channel('vacg-mudancas');
-  ['empresas', 'condicionantes', 'eventos', 'anexos'].forEach((table) =>
+  ['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades'].forEach((table) =>
     canal.on('postgres_changes', { event: '*', schema: 'public', table }, agendar)
   );
   canal.subscribe();
