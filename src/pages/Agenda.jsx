@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, CalendarPlus, CalendarDays } from 'lucide-react';
-import { useStore } from '../store';
-import { useModais } from '../components/modais';
+import { useModulo } from '../modulos';
 import EventoItem from '../components/EventoItem';
 import { EmptyState } from '../components/ui';
-import { TIPOS_EVENTO } from '../constants';
-import { MESES, toISO, hojeISO, fmtData, statusEvento, nomeEmpresa } from '../utils';
+import { MESES, toISO, hojeISO, fmtData, statusEvento } from '../utils';
 
 const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-export default function Agenda() {
-  const { eventos, empresas } = useStore();
-  const { abrirEvento } = useModais();
+// modulo: 'ambiental' (empresas) ou 'car' (imóveis rurais)
+export default function Agenda({ modulo = 'ambiental' }) {
+  const mod = useModulo(modulo);
+  const { eventos, entidades, abrirEvento, chaveEntidade: chave } = mod;
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -25,7 +24,7 @@ export default function Agenda() {
     () =>
       eventos.filter(
         (e) =>
-          (!empresaId || e.empresaId === empresaId) &&
+          (!empresaId || e[chave] === empresaId) &&
           (!tipo || e.tipo === tipo) &&
           (mostrarConcluidos || e.status !== 'concluido')
       ),
@@ -65,11 +64,11 @@ export default function Agenda() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Agenda</h1>
-          <p className="muted">Calendário de vencimentos e eventos de controle</p>
+          <h1>{modulo === 'car' ? 'Agenda do CAR' : 'Agenda'}</h1>
+          <p className="muted">{modulo === 'car' ? 'Prazos dos imóveis rurais: retificações, notificações, PRA e recomposição' : 'Calendário de vencimentos e eventos de controle'}</p>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => abrirEvento({ dataVencimento: sel, empresaId })}>
+          <button className="btn btn-primary" onClick={() => abrirEvento({ dataVencimento: sel, [chave]: empresaId })}>
             <CalendarPlus size={16} /> Novo evento
           </button>
         </div>
@@ -77,12 +76,12 @@ export default function Agenda() {
 
       <div className="toolbar wrap">
         <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className="select-inline">
-          <option value="">Todas as empresas</option>
-          {empresas.map((e) => <option key={e.id} value={e.id}>{nomeEmpresa(e)}</option>)}
+          <option value="">{modulo === 'car' ? 'Todos os imóveis' : 'Todas as empresas'}</option>
+          {entidades.map((e) => <option key={e.id} value={e.id}>{mod.nomeEntidade(e)}</option>)}
         </select>
         <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="select-inline">
           <option value="">Todos os tipos</option>
-          {Object.entries(TIPOS_EVENTO).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
+          {Object.entries(mod.tipos).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
         </select>
         <label className="check small">
           <input type="checkbox" checked={mostrarConcluidos} onChange={(e) => setMostrarConcluidos(e.target.checked)} />
@@ -111,12 +110,12 @@ export default function Agenda() {
                   key={iso}
                   className={`cal-day${fora ? ' fora' : ''}${iso === hj ? ' hoje' : ''}${iso === sel ? ' sel' : ''}`}
                   onClick={() => setSel(iso)}
-                  onDoubleClick={() => abrirEvento({ dataVencimento: iso, empresaId })}
+                  onDoubleClick={() => abrirEvento({ dataVencimento: iso, [chave]: empresaId })}
                 >
                   <span className="cal-num">{d.getDate()}</span>
                   <div className="cal-evs">
                     {evs.slice(0, 3).map((e) => (
-                      <span key={e.id} className={`cal-ev st-${statusEvento(e)}`} style={{ '--c': TIPOS_EVENTO[e.tipo]?.cor }}>
+                      <span key={e.id} className={`cal-ev st-${statusEvento(e)}`} style={{ '--c': mod.tipos[e.tipo]?.cor }}>
                         <span className="cal-ev-txt">{e.titulo}</span>
                       </span>
                     ))}
@@ -135,10 +134,10 @@ export default function Agenda() {
           </div>
           {doDia.length === 0 ? (
             <EmptyState icon={CalendarPlus} title="Nenhum evento neste dia"
-              action={<button className="btn btn-sm" onClick={() => abrirEvento({ dataVencimento: sel, empresaId })}>Criar evento neste dia</button>} />
+              action={<button className="btn btn-sm" onClick={() => abrirEvento({ dataVencimento: sel, [chave]: empresaId })}>Criar evento neste dia</button>} />
           ) : (
             <div className="evento-list">
-              {doDia.map((ev) => <EventoItem key={ev.id} ev={ev} compact />)}
+              {doDia.map((ev) => <EventoItem key={ev.id} ev={ev} compact modulo={modulo} />)}
             </div>
           )}
 
@@ -149,7 +148,7 @@ export default function Agenda() {
             <p className="muted small">Nenhum vencimento neste mês.</p>
           ) : (
             <div className="evento-list">
-              {doMes.map((ev) => <EventoItem key={ev.id} ev={ev} compact />)}
+              {doMes.map((ev) => <EventoItem key={ev.id} ev={ev} compact modulo={modulo} />)}
             </div>
           )}
         </section>

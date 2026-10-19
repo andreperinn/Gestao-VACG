@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react';
 import { BellRing, CircleCheck, TriangleAlert, Clock, CalendarClock } from 'lucide-react';
-import { useStore } from '../store';
+import { useModulo } from '../modulos';
 import EventoItem from '../components/EventoItem';
 import { Chips, EmptyState } from '../components/ui';
-import { TIPOS_EVENTO } from '../constants';
-import { statusEvento, diasAte, nomeEmpresa } from '../utils';
+import { statusEvento, diasAte } from '../utils';
 
-export default function Alertas({ filtroInicial }) {
-  const { eventos, empresas } = useStore();
+// modulo: 'ambiental' (empresas) ou 'car' (imóveis rurais)
+export default function Alertas({ filtroInicial, modulo = 'ambiental' }) {
+  const mod = useModulo(modulo);
+  const { eventos, entidades, chaveEntidade: chave } = mod;
   const [filtro, setFiltro] = useState(filtroInicial || 'atencao');
   const [empresaId, setEmpresaId] = useState('');
   const [tipo, setTipo] = useState('');
 
   const base = useMemo(
-    () => eventos.filter((e) => (!empresaId || e.empresaId === empresaId) && (!tipo || e.tipo === tipo)),
-    [eventos, empresaId, tipo]
+    () => eventos.filter((e) => (!empresaId || e[chave] === empresaId) && (!tipo || e.tipo === tipo)),
+    [eventos, empresaId, tipo, chave]
   );
 
   const grupos = useMemo(() => {
@@ -42,19 +43,19 @@ export default function Alertas({ filtroInicial }) {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Alertas</h1>
+          <h1>{modulo === 'car' ? 'Alertas do CAR' : 'Alertas'}</h1>
           <p className="muted">Vencimentos que precisam de ação</p>
         </div>
       </div>
 
       <div className="toolbar wrap">
         <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className="select-inline">
-          <option value="">Todas as empresas</option>
-          {empresas.map((e) => <option key={e.id} value={e.id}>{nomeEmpresa(e)}</option>)}
+          <option value="">{modulo === 'car' ? 'Todos os imóveis' : 'Todas as empresas'}</option>
+          {entidades.map((e) => <option key={e.id} value={e.id}>{mod.nomeEntidade(e)}</option>)}
         </select>
         <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="select-inline">
           <option value="">Todos os tipos</option>
-          {Object.entries(TIPOS_EVENTO).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
+          {Object.entries(mod.tipos).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
         </select>
       </div>
 
@@ -82,7 +83,7 @@ export default function Alertas({ filtroInicial }) {
                 </h2>
               )}
               <div className="card evento-list">
-                {grupos[s.id].map((ev) => <EventoItem key={ev.id} ev={ev} />)}
+                {grupos[s.id].map((ev) => <EventoItem key={ev.id} ev={ev} modulo={modulo} />)}
               </div>
             </section>
           ) : null

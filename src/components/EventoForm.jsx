@@ -1,58 +1,51 @@
 import { useEffect, useState } from 'react';
 import { CalendarPlus, Save, Trash2, Bell, Repeat } from 'lucide-react';
 import { Modal, Field, useUI } from './ui';
-import { useStore } from '../store';
-import { TIPOS_EVENTO, ANTECEDENCIAS } from '../constants';
-import { RECORRENCIAS, addDias, fmtData, nomeEmpresa, hojeISO, diasAte } from '../utils';
+import { useModulo } from '../modulos';
+import { ANTECEDENCIAS } from '../constants';
+import { RECORRENCIAS, addDias, fmtData, hojeISO, diasAte } from '../utils';
 
-const vazio = () => ({
-  empresaId: '',
-  tipo: 'licenca',
-  titulo: '',
-  documento: '',
-  dataVencimento: '',
-  antecedenciaDias: 30,
-  recorrencia: 'nenhuma',
-  condicionanteId: null,
-  observacoes: '',
-});
-
-const SUGESTOES = {
-  licenca: ['Renovação da Licença de Operação', 'Vencimento da Licença de Instalação', 'Vencimento da LAS'],
-  analise: ['Análise de efluentes', 'Análise de água subterrânea', 'Monitoramento de emissões atmosféricas', 'Análise de ruído'],
-  condicionante: ['Cumprimento de condicionante'],
-  relatorio: ['RAPP – Cadastro Técnico Federal', 'Inventário de resíduos sólidos', 'Relatório de automonitoramento'],
-  taxa: ['Taxa de fiscalização ambiental', 'Taxa de renovação de licença'],
-  outro: ['Renovação de outorga de água', 'Visita técnica', 'Renovação do AVCB'],
-};
-
-export default function EventoForm({ open, onClose, evento }) {
-  const { empresas, empresaPorId, salvarEvento, excluirEvento } = useStore();
+// modulo: 'ambiental' (evento de uma empresa) ou 'car' (evento de um imóvel rural)
+export default function EventoForm({ open, onClose, evento, modulo = 'ambiental' }) {
+  const mod = useModulo(modulo);
+  const { entidades, entidadePorId, chaveEntidade: chave, chaveVinculo } = mod;
   const { toast, confirm } = useUI();
+  const vazio = () => ({
+    [chave]: '',
+    tipo: Object.keys(mod.tipos)[0],
+    titulo: '',
+    documento: '',
+    dataVencimento: '',
+    antecedenciaDias: 30,
+    recorrencia: 'nenhuma',
+    [chaveVinculo]: null,
+    observacoes: '',
+  });
   const [f, setF] = useState(vazio);
   const [erros, setErros] = useState({});
   const editando = !!evento?.id;
 
   useEffect(() => {
     if (open) {
-      setF({ ...vazio(), ...(evento || {}), empresaId: evento?.empresaId || (empresas.length === 1 ? empresas[0].id : '') });
+      setF({ ...vazio(), ...(evento || {}), [chave]: evento?.[chave] || (entidades.length === 1 ? entidades[0].id : '') });
       setErros({});
     }
-  }, [open, evento, empresas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, evento, entidades]);
 
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const empresa = empresaPorId[f.empresaId];
-  const condicionantes = empresa?.condicionantes || [];
+  const entidade = entidadePorId[f[chave]];
+  const vinculos = mod.vinculos(entidade);
 
   const salvar = (e) => {
     e.preventDefault();
     const er = {};
-    if (!f.empresaId) er.empresaId = 'Escolha a empresa';
+    if (!f[chave]) er.entidade = `Escolha ${modulo === 'car' ? 'o imóvel' : 'a empresa'}`;
     if (!f.titulo.trim()) er.titulo = 'Dê um título ao evento';
     if (!f.dataVencimento) er.dataVencimento = 'Informe a data de vencimento';
     setErros(er);
     if (Object.keys(er).length) return;
-    salvarEvento({ ...f, antecedenciaDias: Number(f.antecedenciaDias) || 0 });
+    mod.salvar({ ...f, antecedenciaDias: Number(f.antecedenciaDias) || 0 });
     toast(editando ? 'Evento atualizado' : 'Evento de controle criado');
     onClose();
   };
@@ -60,24 +53,26 @@ export default function EventoForm({ open, onClose, evento }) {
   const excluir = async () => {
     const ok = await confirm({ title: 'Excluir evento?', message: `"${f.titulo}" será removido permanentemente.`, confirmLabel: 'Excluir' });
     if (ok) {
-      excluirEvento(f.id);
+      mod.excluir(f.id);
       toast('Evento excluído', 'info');
       onClose();
     }
   };
 
-  const vincularCondicionante = (id) => {
-    const c = condicionantes.find((x) => x.id === id);
+  // Ao vincular a uma condicionante/pendência, já sugere título, prazo e repetição
+  const vincular = (id) => {
+    const v = vinculos.find((x) => x.id === id);
+    const rotulo = modulo === 'car' ? 'Pendência' : 'Condicionante';
     setF((p) => ({
       ...p,
-      condicionanteId: id || null,
-      ...(c && !p.id
+      [chaveVinculo]: id || null,
+      ...(v && !p.id
         ? {
-            tipo: 'condicionante',
-            titulo: p.titulo || `Condicionante ${c.numero}: ${c.descricao.slice(0, 60)}`,
-            documento: p.documento || c.licencaRef,
-            dataVencimento: p.dataVencimento || c.prazo,
-            recorrencia: c.periodicidade || p.recorrencia,
+            tipo: mod.tipoVinculo,
+            titulo: p.titulo || `${rotulo} ${v.numero}: ${(v.descricao || '').slice(0, 60)}`,
+            documento: p.documento || v.licencaRef || '',
+            dataVencimento: p.dataVencimento || v.prazo,
+            recorrencia: v.periodicidade || p.recorrencia,
           }
         : {}),
     }));
@@ -85,6 +80,7 @@ export default function EventoForm({ open, onClose, evento }) {
 
   const dataAviso = f.dataVencimento ? addDias(f.dataVencimento, -Number(f.antecedenciaDias || 0)) : null;
   const avisoJaAtivo = dataAviso && diasAte(dataAviso) <= 0;
+  const sugestoes = mod.sugestoes[f.tipo] || [];
 
   return (
     <Modal
@@ -92,8 +88,10 @@ export default function EventoForm({ open, onClose, evento }) {
       onClose={onClose}
       size="md"
       icon={<CalendarPlus size={20} />}
-      title={editando ? 'Editar evento de controle' : 'Novo evento de controle'}
-      subtitle="Avisos de vencimento de licenças, análises, condicionantes e taxas"
+      title={`${editando ? 'Editar' : 'Novo'} evento de controle${modulo === 'car' ? ' · CAR' : ''}`}
+      subtitle={modulo === 'car'
+        ? 'Prazos de retificação, notificações, PRA, recomposição e vistorias do imóvel'
+        : 'Avisos de vencimento de licenças, análises, condicionantes e taxas'}
       footer={
         <>
           {editando && (
@@ -102,18 +100,18 @@ export default function EventoForm({ open, onClose, evento }) {
             </button>
           )}
           <button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" form="form-evento" className="btn btn-primary">
+          <button type="submit" form={`form-evento-${modulo}`} className="btn btn-primary">
             <Save size={16} /> Salvar
           </button>
         </>
       }
     >
-      <form id="form-evento" onSubmit={salvar} className="form-body">
-        <Field label="Empresa *" error={erros.empresaId}>
-          <select value={f.empresaId} onChange={(e) => setF((p) => ({ ...p, empresaId: e.target.value, condicionanteId: null }))}>
-            <option value="">Selecione a empresa…</option>
-            {[...empresas].sort((a, b) => nomeEmpresa(a).localeCompare(nomeEmpresa(b))).map((e) => (
-              <option key={e.id} value={e.id}>{nomeEmpresa(e)}</option>
+      <form id={`form-evento-${modulo}`} onSubmit={salvar} className="form-body">
+        <Field label={`${mod.entidade} *`} error={erros.entidade}>
+          <select value={f[chave]} onChange={(e) => setF((p) => ({ ...p, [chave]: e.target.value, [chaveVinculo]: null }))}>
+            <option value="">{modulo === 'car' ? 'Selecione o imóvel…' : 'Selecione a empresa…'}</option>
+            {[...entidades].sort((a, b) => mod.nomeEntidade(a).localeCompare(mod.nomeEntidade(b))).map((x) => (
+              <option key={x.id} value={x.id}>{mod.nomeEntidade(x)}</option>
             ))}
           </select>
         </Field>
@@ -121,7 +119,7 @@ export default function EventoForm({ open, onClose, evento }) {
         <div className="field">
           <span className="field-label">Tipo de evento</span>
           <div className="tipo-grid">
-            {Object.entries(TIPOS_EVENTO).map(([k, t]) => (
+            {Object.entries(mod.tipos).map(([k, t]) => (
               <button type="button" key={k} className={`tipo-btn${f.tipo === k ? ' active' : ''}`} style={{ '--c': t.cor }} onClick={() => set('tipo', k)}>
                 <t.icon size={20} />
                 <span>{t.curto}</span>
@@ -131,16 +129,16 @@ export default function EventoForm({ open, onClose, evento }) {
         </div>
 
         <Field label="Título *" error={erros.titulo}>
-          <input value={f.titulo} onChange={(e) => set('titulo', e.target.value)} list="sugestoes-titulo" placeholder={SUGESTOES[f.tipo]?.[0]} />
-          <datalist id="sugestoes-titulo">{(SUGESTOES[f.tipo] || []).map((s) => <option key={s} value={s} />)}</datalist>
+          <input value={f.titulo} onChange={(e) => set('titulo', e.target.value)} list={`sugestoes-${modulo}`} placeholder={sugestoes[0]} />
+          <datalist id={`sugestoes-${modulo}`}>{sugestoes.map((s) => <option key={s} value={s} />)}</datalist>
         </Field>
 
-        {condicionantes.length > 0 && (
-          <Field label="Vincular a uma condicionante">
-            <select value={f.condicionanteId || ''} onChange={(e) => vincularCondicionante(e.target.value)}>
+        {vinculos.length > 0 && (
+          <Field label={`Vincular a uma ${mod.vinculo}`}>
+            <select value={f[chaveVinculo] || ''} onChange={(e) => vincular(e.target.value)}>
               <option value="">Nenhuma</option>
-              {condicionantes.map((c) => (
-                <option key={c.id} value={c.id}>{c.numero ? `${c.numero} – ` : ''}{c.descricao.slice(0, 70)}</option>
+              {vinculos.map((v) => (
+                <option key={v.id} value={v.id}>{v.numero ? `${v.numero} – ` : ''}{(v.descricao || '').slice(0, 70)}</option>
               ))}
             </select>
           </Field>
@@ -150,8 +148,8 @@ export default function EventoForm({ open, onClose, evento }) {
           <Field label="Data de vencimento *" error={erros.dataVencimento}>
             <input type="date" value={f.dataVencimento} onChange={(e) => set('dataVencimento', e.target.value)} min={editando ? undefined : addDias(hojeISO(), -365)} />
           </Field>
-          <Field label="Nº do documento / licença">
-            <input value={f.documento} onChange={(e) => set('documento', e.target.value)} placeholder="Ex.: LO nº 0123/2024" />
+          <Field label={modulo === 'car' ? 'Nº do documento / ofício' : 'Nº do documento / licença'}>
+            <input value={f.documento} onChange={(e) => set('documento', e.target.value)} placeholder={modulo === 'car' ? 'Ex.: Ofício nº 123/2026' : 'Ex.: LO nº 0123/2024'} />
           </Field>
         </div>
 
@@ -179,7 +177,7 @@ export default function EventoForm({ open, onClose, evento }) {
         </Field>
 
         <Field label="Observações">
-          <textarea rows={3} value={f.observacoes} onChange={(e) => set('observacoes', e.target.value)} placeholder="Laboratório, protocolo, detalhes…" />
+          <textarea rows={3} value={f.observacoes} onChange={(e) => set('observacoes', e.target.value)} placeholder="Protocolo, contato no órgão, detalhes…" />
         </Field>
       </form>
     </Modal>

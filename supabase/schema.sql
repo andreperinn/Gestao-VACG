@@ -86,6 +86,81 @@ create table if not exists public.anexos (
 );
 create index if not exists anexos_empresa_idx on public.anexos (empresa_id);
 
+-- =====================================================================
+-- CAR — Cadastro Ambiental Rural (módulo separado)
+-- =====================================================================
+create table if not exists public.imoveis_car (
+  id                text primary key,
+  nome              text not null,
+  codigo_car        text,
+  empresa_id        text references public.empresas (id) on delete set null,  -- cliente vinculado (opcional)
+  situacao          text not null default 'ativo',
+  condicao          text not null default 'aguardando',
+  data_inscricao    date,
+  data_retificacao  date,
+  municipio         text,
+  uf                text,
+  latitude          double precision,
+  longitude         double precision,
+  areas             jsonb not null default '{}'::jsonb,   -- total, módulos fiscais, APP, RL, bioma…
+  proprietarios     jsonb not null default '[]'::jsonb,
+  matriculas        jsonb not null default '[]'::jsonb,
+  ccir              text,
+  nirf              text,
+  pra               jsonb not null default '{}'::jsonb,   -- adesão, termo de compromisso, prazos
+  observacoes       text,
+  criado_em         timestamptz not null default now(),
+  atualizado_em     timestamptz not null default now(),
+  criado_por        uuid default auth.uid() references auth.users (id) on delete set null
+);
+
+create table if not exists public.car_pendencias (
+  id             text primary key,
+  imovel_id      text not null references public.imoveis_car (id) on delete cascade,
+  numero         text,
+  tipo           text not null default 'outro',
+  origem         text,
+  descricao      text,
+  prazo          date,
+  periodicidade  text not null default 'nenhuma',
+  status         text not null default 'pendente' check (status in ('pendente', 'andamento', 'resolvida')),
+  ordem          integer not null default 0,
+  criado_em      timestamptz not null default now()
+);
+create index if not exists car_pendencias_imovel_idx on public.car_pendencias (imovel_id);
+
+create table if not exists public.car_eventos (
+  id                 text primary key,
+  imovel_id          text not null references public.imoveis_car (id) on delete cascade,
+  pendencia_id       text references public.car_pendencias (id) on delete set null,
+  tipo               text not null default 'outro',
+  titulo             text not null,
+  documento          text,
+  data_vencimento    date not null,
+  antecedencia_dias  integer not null default 30,
+  recorrencia        text not null default 'nenhuma',
+  status             text not null default 'pendente' check (status in ('pendente', 'concluido')),
+  concluido_em       date,
+  observacoes        text,
+  criado_em          timestamptz not null default now(),
+  criado_por         uuid default auth.uid() references auth.users (id) on delete set null
+);
+create index if not exists car_eventos_imovel_idx on public.car_eventos (imovel_id);
+
+create table if not exists public.car_anexos (
+  id           text primary key,
+  imovel_id    text not null references public.imoveis_car (id) on delete cascade,
+  nome         text not null,
+  tipo         text,
+  tamanho      bigint,
+  categoria    text not null default 'outro',
+  descricao    text,
+  validade     date,
+  enviado_em   timestamptz not null default now(),
+  enviado_por  uuid default auth.uid() references auth.users (id) on delete set null
+);
+create index if not exists car_anexos_imovel_idx on public.car_anexos (imovel_id);
+
 -- ---------- Perfis de usuário (admin / colaborador) ----------
 create table if not exists public.perfis (
   user_id    uuid primary key references auth.users (id) on delete cascade,
@@ -184,19 +259,32 @@ begin
     return null;
   end if;
 
-  v_emp_id := case when tg_table_name = 'empresas' then v_reg ->> 'id' else v_reg ->> 'empresa_id' end;
-  if tg_table_name = 'empresas' then
-    v_emp := coalesce(nullif(v_reg ->> 'nome_fantasia', ''), v_reg ->> 'razao_social');
+  -- Módulo CAR: o "contexto" é o imóvel rural (gravado nas colunas empresa_id/empresa_nome)
+  if tg_table_name in ('imoveis_car', 'car_pendencias', 'car_eventos', 'car_anexos') then
+    v_emp_id := case when tg_table_name = 'imoveis_car' then v_reg ->> 'id' else v_reg ->> 'imovel_id' end;
+    if tg_table_name = 'imoveis_car' then
+      v_emp := v_reg ->> 'nome';
+    else
+      select nome into v_emp from public.imoveis_car where id = v_emp_id;
+      if tg_op = 'DELETE' and v_emp is null then
+        return null;
+      end if;
+    end if;
   else
-    select coalesce(nullif(nome_fantasia, ''), razao_social) into v_emp from public.empresas where id = v_emp_id;
-    -- Itens apagados junto com a empresa: basta o registro da exclusão da empresa
-    if tg_op = 'DELETE' and v_emp is null then
-      return null;
+    v_emp_id := case when tg_table_name = 'empresas' then v_reg ->> 'id' else v_reg ->> 'empresa_id' end;
+    if tg_table_name = 'empresas' then
+      v_emp := coalesce(nullif(v_reg ->> 'nome_fantasia', ''), v_reg ->> 'razao_social');
+    else
+      select coalesce(nullif(nome_fantasia, ''), razao_social) into v_emp from public.empresas where id = v_emp_id;
+      -- Itens apagados junto com a empresa: basta o registro da exclusão da empresa
+      if tg_op = 'DELETE' and v_emp is null then
+        return null;
+      end if;
     end if;
   end if;
 
   v_acao := case tg_op when 'INSERT' then 'criou' when 'UPDATE' then 'editou' else 'excluiu' end;
-  if tg_table_name = 'eventos' and tg_op = 'UPDATE' and (v_antes ->> 'status') is distinct from (v_depois ->> 'status') then
+  if tg_table_name in ('eventos', 'car_eventos') and tg_op = 'UPDATE' and (v_antes ->> 'status') is distinct from (v_depois ->> 'status') then
     v_acao := case when v_depois ->> 'status' = 'concluido' then 'concluiu' else 'reabriu' end;
   end if;
 
@@ -215,6 +303,10 @@ begin
       when 'condicionantes' then concat_ws(' – ', nullif(v_reg ->> 'numero', ''), left(v_reg ->> 'descricao', 80))
       when 'anexos' then v_reg ->> 'nome'
       when 'mensalidades' then 'mensalidade'
+      when 'imoveis_car' then v_emp
+      when 'car_eventos' then v_reg ->> 'titulo'
+      when 'car_pendencias' then concat_ws(' – ', nullif(v_reg ->> 'numero', ''), left(v_reg ->> 'descricao', 80))
+      when 'car_anexos' then v_reg ->> 'nome'
     end,
     v_antes,
     v_depois
@@ -225,7 +317,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades'] loop
+  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades', 'imoveis_car', 'car_pendencias', 'car_eventos', 'car_anexos'] loop
     execute format('drop trigger if exists registrar_atividade on public.%I', t);
     execute format('create trigger registrar_atividade after insert or update or delete on public.%I
                     for each row execute function public.registrar_atividade()', t);
@@ -245,6 +337,11 @@ create trigger empresas_atualizado_em
   before update on public.empresas
   for each row execute function public.tocar_atualizado_em();
 
+drop trigger if exists imoveis_car_atualizado_em on public.imoveis_car;
+create trigger imoveis_car_atualizado_em
+  before update on public.imoveis_car
+  for each row execute function public.tocar_atualizado_em();
+
 drop trigger if exists mensalidades_atualizado_em on public.mensalidades;
 create trigger mensalidades_atualizado_em
   before update on public.mensalidades
@@ -261,11 +358,15 @@ alter table public.anexos         enable row level security;
 alter table public.perfis         enable row level security;
 alter table public.mensalidades   enable row level security;
 alter table public.atividades     enable row level security;
+alter table public.imoveis_car    enable row level security;
+alter table public.car_pendencias enable row level security;
+alter table public.car_eventos    enable row level security;
+alter table public.car_anexos     enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos'] loop
+  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos', 'imoveis_car', 'car_pendencias', 'car_eventos', 'car_anexos'] loop
     execute format('drop policy if exists "equipe_le" on public.%I', t);
     execute format('drop policy if exists "equipe_insere" on public.%I', t);
     execute format('drop policy if exists "equipe_altera" on public.%I', t);
@@ -316,7 +417,7 @@ create policy "documentos_exclui" on storage.objects for delete to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades', 'atividades'] loop
+  foreach t in array array['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades', 'atividades', 'imoveis_car', 'car_pendencias', 'car_eventos', 'car_anexos'] loop
     if not exists (
       select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t

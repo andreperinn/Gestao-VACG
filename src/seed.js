@@ -167,5 +167,80 @@ export function criarExemplo() {
 
   [e1, e2, e3].forEach((e) => (e.anexos = []));
 
-  return { empresas: [e1, e2, e3], eventos, exemplo: true };
+  // ---------- CAR: imóveis rurais de exemplo ----------
+  const pend = (numero, tipo, descricao, extra = {}) => ({
+    id: uid(), numero, tipo, descricao, origem: '', prazo: '', periodicidade: 'nenhuma', status: 'pendente', ...extra,
+  });
+  const im1 = {
+    id: uid(),
+    nome: 'Fazenda Boa Esperança',
+    codigoCar: 'MG-3122306-7A2F.91C4.0B3D.4E8A.55F1.C2D9.0A7B.3E61',
+    empresaId: e3.id,
+    situacao: 'ativo',
+    condicao: 'pendencias',
+    dataInscricao: '2016-03-14',
+    dataRetificacao: '2023-08-02',
+    municipio: 'Itaúna',
+    uf: 'MG',
+    localizacao: { lat: -20.0412, lng: -44.6187 },
+    areas: { total: '184.5320', modulos: '7.38', bioma: 'demais', app: '12.4100', rl: '31.2000', rlSituacao: 'proposta', vegetacao: '42.7300', consolidada: '128.9000', usoRestrito: '' },
+    proprietarios: [{ id: uid(), nome: 'Roberto Faria', documento: '123.456.789-00', tipo: 'proprietario' }],
+    matriculas: [{ id: uid(), numero: '12.345', cartorio: 'CRI de Itaúna/MG', area: '184.5320' }],
+    ccir: '950.017.123.456-7',
+    nirf: '1.234.567-8',
+    pra: { adesao: false },
+    observacoes: 'Acesso pela estrada municipal, 8 km após o trevo. Falar com o caseiro Sr. José.',
+    criadoEm: agora,
+    anexos: [],
+  };
+  im1.pendencias = [
+    pend('01', 'retificacao', 'Retificar o polígono da APP do córrego Santa Rita conforme notificação.', { origem: 'Notificação SICAR', prazo: addDias(h, 12), status: 'andamento' }),
+    pend('02', 'documental', 'Apresentar matrícula atualizada (emitida há menos de 30 dias).', { origem: 'Notificação SICAR', prazo: addDias(h, 12) }),
+    pend('03', 'rl', 'Complementar a Reserva Legal: área declarada abaixo dos 20% exigidos.', { origem: 'Análise técnica', prazo: addDias(h, 95) }),
+  ];
+
+  const im2 = {
+    id: uid(),
+    nome: 'Sítio Água Limpa',
+    codigoCar: 'MG-3122306-1D4E.8F20.6A9B.C3E7.24D8.F0A1.5B6C.9E02',
+    empresaId: '',
+    situacao: 'ativo',
+    condicao: 'regularizacao',
+    dataInscricao: '2015-11-20',
+    dataRetificacao: '',
+    municipio: 'Divinópolis',
+    uf: 'MG',
+    localizacao: { lat: -20.2215, lng: -44.9524 },
+    areas: { total: '48.2000', modulos: '1.93', bioma: 'demais', app: '3.1000', rl: '6.4000', rlSituacao: 'aprovada', vegetacao: '9.6400', consolidada: '35.0000', appRecompor: '1.8000' },
+    proprietarios: [
+      { id: uid(), nome: 'Maria Aparecida Souza', documento: '987.654.321-00', tipo: 'proprietario' },
+      { id: uid(), nome: 'João Batista Souza', documento: '456.789.123-00', tipo: 'proprietario' },
+    ],
+    matriculas: [{ id: uid(), numero: '8.910', cartorio: 'CRI de Divinópolis/MG', area: '48.2000' }],
+    ccir: '950.017.654.321-0',
+    nirf: '7.654.321-0',
+    pra: { adesao: true, termo: 'TC-PRA nº 0456/2024', orgao: 'SEMAD/MG', dataAdesao: '2024-05-10', prazoFinal: addDias(h, 400), compromissos: 'Recompor 1,8 ha de APP do ribeirão com plantio de nativas, com relatórios anuais de acompanhamento.' },
+    observacoes: '',
+    criadoEm: agora,
+    anexos: [],
+  };
+  im2.pendencias = [
+    pend('01', 'pra', 'Enviar relatório anual de acompanhamento da recomposição de APP.', { origem: 'TC-PRA nº 0456/2024', prazo: addDias(h, -6), periodicidade: 'anual' }),
+    pend('02', 'app', 'Cercar a área de APP em recomposição para evitar acesso do gado.', { origem: 'TC-PRA nº 0456/2024', status: 'resolvida' }),
+  ];
+
+  const evCar = (imovel, tipo, titulo, dias, extra = {}) => ({
+    id: uid(), imovelId: imovel.id, tipo, titulo, documento: '', dataVencimento: addDias(h, dias), antecedenciaDias: 30,
+    recorrencia: 'nenhuma', status: 'pendente', concluidoEm: null, pendenciaId: null, observacoes: '', criadoEm: agora, ...extra,
+  });
+  const carEventos = [
+    evCar(im1, 'notificacao', 'Responder notificação da análise do CAR', 12, { documento: 'Notificação SICAR', antecedenciaDias: 15, pendenciaId: im1.pendencias[0].id }),
+    evCar(im1, 'rl', 'Complementar Reserva Legal', 95, { tipo: 'recomposicao', pendenciaId: im1.pendencias[2].id }),
+    evCar(im1, 'itr', 'Declaração do ITR', 160, { recorrencia: 'anual' }),
+    evCar(im2, 'pra', 'Relatório anual de acompanhamento do PRA', -6, { recorrencia: 'anual', documento: 'TC-PRA nº 0456/2024', pendenciaId: im2.pendencias[0].id }),
+    evCar(im2, 'pra', 'Prazo final do termo de compromisso (PRA)', 400, { documento: 'TC-PRA nº 0456/2024', antecedenciaDias: 120 }),
+    evCar(im2, 'vistoria', 'Vistoria da área em recomposição', 40),
+  ];
+
+  return { empresas: [e1, e2, e3], eventos, imoveis: [im1, im2], carEventos, exemplo: true };
 }

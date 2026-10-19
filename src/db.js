@@ -147,6 +147,116 @@ const eventoDoDb = (r) => ({
   criadoEm: r.criado_em,
 });
 
+// ---------- CAR: imóveis rurais, pendências, eventos e documentos ----------
+const imovelParaDb = (im) => ({
+  id: im.id,
+  nome: im.nome,
+  codigo_car: nulo(im.codigoCar),
+  empresa_id: nulo(im.empresaId),
+  situacao: im.situacao || 'ativo',
+  condicao: im.condicao || 'aguardando',
+  data_inscricao: nulo(im.dataInscricao),
+  data_retificacao: nulo(im.dataRetificacao),
+  municipio: nulo(im.municipio),
+  uf: nulo(im.uf),
+  latitude: im.localizacao?.lat ?? null,
+  longitude: im.localizacao?.lng ?? null,
+  areas: im.areas || {},
+  proprietarios: im.proprietarios || [],
+  matriculas: im.matriculas || [],
+  ccir: nulo(im.ccir),
+  nirf: nulo(im.nirf),
+  pra: im.pra || {},
+  observacoes: nulo(im.observacoes),
+  ...(im.criadoEm && { criado_em: im.criadoEm }),
+});
+
+const imovelDoDb = (r, pendencias, anexos) => ({
+  id: r.id,
+  nome: txt(r.nome),
+  codigoCar: txt(r.codigo_car),
+  empresaId: r.empresa_id || '',
+  situacao: r.situacao,
+  condicao: r.condicao,
+  dataInscricao: txt(r.data_inscricao),
+  dataRetificacao: txt(r.data_retificacao),
+  municipio: txt(r.municipio),
+  uf: txt(r.uf),
+  localizacao: r.latitude != null && r.longitude != null ? { lat: r.latitude, lng: r.longitude } : null,
+  areas: r.areas || {},
+  proprietarios: r.proprietarios || [],
+  matriculas: r.matriculas || [],
+  ccir: txt(r.ccir),
+  nirf: txt(r.nirf),
+  pra: r.pra || {},
+  observacoes: txt(r.observacoes),
+  criadoEm: r.criado_em,
+  atualizadoEm: r.atualizado_em,
+  pendencias,
+  anexos,
+});
+
+const pendenciaParaDb = (imovelId, p, ordem) => ({
+  id: p.id,
+  imovel_id: imovelId,
+  numero: nulo(p.numero),
+  tipo: p.tipo || 'outro',
+  origem: nulo(p.origem),
+  descricao: nulo(p.descricao),
+  prazo: nulo(p.prazo),
+  periodicidade: p.periodicidade || 'nenhuma',
+  status: p.status || 'pendente',
+  ordem,
+});
+
+const pendenciaDoDb = (r) => ({
+  id: r.id,
+  numero: txt(r.numero),
+  tipo: r.tipo || 'outro',
+  origem: txt(r.origem),
+  descricao: txt(r.descricao),
+  prazo: txt(r.prazo),
+  periodicidade: r.periodicidade || 'nenhuma',
+  status: r.status || 'pendente',
+});
+
+const carEventoParaDb = (ev) => ({
+  id: ev.id,
+  imovel_id: ev.imovelId,
+  pendencia_id: nulo(ev.pendenciaId),
+  tipo: ev.tipo || 'outro',
+  titulo: ev.titulo,
+  documento: nulo(ev.documento),
+  data_vencimento: ev.dataVencimento,
+  antecedencia_dias: Number(ev.antecedenciaDias) || 0,
+  recorrencia: ev.recorrencia || 'nenhuma',
+  status: ev.status || 'pendente',
+  concluido_em: nulo(ev.concluidoEm),
+  observacoes: nulo(ev.observacoes),
+  ...(ev.criadoEm && { criado_em: ev.criadoEm }),
+});
+
+const carEventoDoDb = (r) => ({
+  id: r.id,
+  imovelId: r.imovel_id,
+  pendenciaId: r.pendencia_id,
+  tipo: r.tipo,
+  titulo: txt(r.titulo),
+  documento: txt(r.documento),
+  dataVencimento: r.data_vencimento,
+  antecedenciaDias: r.antecedencia_dias,
+  recorrencia: r.recorrencia,
+  status: r.status,
+  concluidoEm: r.concluido_em,
+  observacoes: txt(r.observacoes),
+  criadoEm: r.criado_em,
+});
+
+const carAnexoParaDb = (imovelId, a) => {
+  const { empresa_id, ...resto } = anexoParaDb(imovelId, a);
+  return { ...resto, imovel_id: imovelId };
+};
+
 // ---------- Helpers ----------
 function ok({ data, error }) {
   if (error) throw new Error(error.message);
@@ -172,14 +282,26 @@ async function upsertEmLotes(tabela, linhas) {
 
 // ---------- Operações ----------
 export async function carregarTudo() {
-  const [emp, cond, ev, anx, mens] = await Promise.all([
+  const [emp, cond, ev, anx, mens, imov, pend, carEv, carAnx] = await Promise.all([
     selecionarTodos('empresas', 'razao_social'),
     selecionarTodos('condicionantes', 'ordem'),
     selecionarTodos('eventos', 'data_vencimento'),
     selecionarTodos('anexos', 'enviado_em'),
     // Para quem não é administrador o banco devolve vazio (regra de segurança)
     financeiro ? selecionarTodos('mensalidades', 'empresa_id') : Promise.resolve([]),
+    selecionarTodos('imoveis_car', 'nome'),
+    selecionarTodos('car_pendencias', 'ordem'),
+    selecionarTodos('car_eventos', 'data_vencimento'),
+    selecionarTodos('car_anexos', 'enviado_em'),
   ]);
+  const pendPorImovel = {};
+  pend.forEach((p) => (pendPorImovel[p.imovel_id] ||= []).push(pendenciaDoDb(p)));
+  const anxPorImovel = {};
+  carAnx.forEach((a) => (anxPorImovel[a.imovel_id] ||= []).push(anexoDoDb(a)));
+  const car = {
+    imoveis: imov.map((r) => imovelDoDb(r, pendPorImovel[r.id] || [], anxPorImovel[r.id] || [])),
+    carEventos: carEv.map(carEventoDoDb),
+  };
   const porEmpresa = {};
   cond.forEach((c) => (porEmpresa[c.empresa_id] ||= []).push(condDoDb(c)));
   const anexosPorEmpresa = {};
@@ -188,6 +310,7 @@ export async function carregarTudo() {
   return {
     empresas: emp.map((r) => empresaDoDb(r, porEmpresa[r.id] || [], anexosPorEmpresa[r.id] || [], mensPorEmpresa[r.id])),
     eventos: ev.map(eventoDoDb),
+    ...car,
   };
 }
 
@@ -228,10 +351,10 @@ export function assinarAtividades(aoMudar) {
   return () => supabase.removeChannel(canal);
 }
 
-// Grava as linhas filhas da empresa e apaga as que foram removidas no app
-async function sincronizarFilhos(tabela, empresaId, linhas) {
+// Grava as linhas filhas (da empresa ou do imóvel) e apaga as que foram removidas no app
+async function sincronizarFilhos(tabela, paiId, linhas, coluna = 'empresa_id') {
   if (linhas.length) ok(await supabase.from(tabela).upsert(linhas));
-  let del = supabase.from(tabela).delete().eq('empresa_id', empresaId);
+  let del = supabase.from(tabela).delete().eq(coluna, paiId);
   if (linhas.length) del = del.not('id', 'in', `(${linhas.map((l) => `"${l.id}"`).join(',')})`);
   ok(await del);
 }
@@ -253,17 +376,57 @@ export async function salvarEventos(lista) {
   if (lista.length) await upsertEmLotes('eventos', lista.map(eventoParaDb));
 }
 
+export async function salvarImovel(im) {
+  ok(await supabase.from('imoveis_car').upsert(imovelParaDb(im)));
+  await sincronizarFilhos('car_pendencias', im.id, (im.pendencias || []).map((p, i) => pendenciaParaDb(im.id, p, i)), 'imovel_id');
+  await sincronizarFilhos('car_anexos', im.id, (im.anexos || []).map((a) => carAnexoParaDb(im.id, a)), 'imovel_id');
+}
+
+export async function salvarCarEventos(lista) {
+  if (lista.length) await upsertEmLotes('car_eventos', lista.map(carEventoParaDb));
+}
+
 export async function excluir(tabela, id) {
   ok(await supabase.from(tabela).delete().eq('id', id));
 }
 
 export async function limparTudo() {
-  // Condicionantes e eventos são apagados junto (on delete cascade)
+  // Itens filhos (condicionantes, eventos, pendências…) são apagados junto (on delete cascade)
+  ok(await supabase.from('imoveis_car').delete().not('id', 'is', null));
   ok(await supabase.from('empresas').delete().not('id', 'is', null));
 }
 
-// Envia empresas/eventos para o banco sem apagar o que já existe.
-export async function mesclar({ empresas, eventos }) {
+// Envia os imóveis do CAR e seus itens para o banco sem apagar o que já existe
+async function mesclarCar(imoveis, carEventos, idsEmp) {
+  const idsImovel = new Set(imoveis.map((im) => im.id));
+  const idsPend = new Set();
+  const pendencias = [];
+  const anexos = [];
+  for (const im of imoveis) {
+    (im.pendencias || []).forEach((p, i) => {
+      idsPend.add(p.id);
+      pendencias.push(pendenciaParaDb(im.id, p, i));
+    });
+    for (const a of im.anexos || []) {
+      const blob = await obterArquivoLocal(a.id);
+      if (!blob) continue;
+      ok(await supabase.storage.from(BUCKET).upload(a.id, blob, { contentType: a.tipo || undefined, upsert: true }));
+      anexos.push(carAnexoParaDb(im.id, a));
+    }
+  }
+  await upsertEmLotes('imoveis_car', imoveis.map((im) => imovelParaDb({ ...im, empresaId: idsEmp.has(im.empresaId) ? im.empresaId : null })));
+  await upsertEmLotes('car_pendencias', pendencias);
+  await upsertEmLotes('car_anexos', anexos);
+  await upsertEmLotes(
+    'car_eventos',
+    carEventos
+      .filter((ev) => idsImovel.has(ev.imovelId))
+      .map((ev) => carEventoParaDb({ ...ev, pendenciaId: idsPend.has(ev.pendenciaId) ? ev.pendenciaId : null }))
+  );
+}
+
+// Envia empresas/eventos (e o CAR) para o banco sem apagar o que já existe.
+export async function mesclar({ empresas, eventos, imoveis = [], carEventos = [] }) {
   const idsEmp = new Set(empresas.map((e) => e.id));
   const idsCond = new Set();
   const conds = [];
@@ -296,6 +459,8 @@ export async function mesclar({ empresas, eventos }) {
       .filter((ev) => idsEmp.has(ev.empresaId))
       .map((ev) => eventoParaDb({ ...ev, condicionanteId: idsCond.has(ev.condicionanteId) ? ev.condicionanteId : null }))
   );
+  // Imóveis podem estar vinculados a empresas, por isso vêm depois delas
+  await mesclarCar(imoveis, carEventos, idsEmp);
 }
 
 export async function substituirTudo(dados) {
@@ -314,7 +479,7 @@ export function assinarMudancas(aoMudar) {
     }, 700);
   };
   const canal = supabase.channel('vacg-mudancas');
-  ['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades'].forEach((table) =>
+  ['empresas', 'condicionantes', 'eventos', 'anexos', 'mensalidades', 'imoveis_car', 'car_pendencias', 'car_eventos', 'car_anexos'].forEach((table) =>
     canal.on('postgres_changes', { event: '*', schema: 'public', table }, agendar)
   );
   canal.subscribe();

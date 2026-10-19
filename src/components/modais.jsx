@@ -1,18 +1,23 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import EmpresaForm from './EmpresaForm';
 import EventoForm from './EventoForm';
+import ImovelForm from './ImovelForm';
 
-// Formulários de empresa e evento podem ser abertos de qualquer tela.
+// Formulários de empresa, imóvel do CAR e eventos podem ser abertos de qualquer tela.
 const ModaisCtx = createContext(null);
 
 export function ModaisProvider({ children }) {
-  const [empresa, setEmpresa] = useState(null); // { dados } | null
+  const [empresa, setEmpresa] = useState(null); // { dados, tab } | null
   const [evento, setEvento] = useState(null);
+  const [imovel, setImovel] = useState(null);
+  const [carEvento, setCarEvento] = useState(null);
 
   const api = useMemo(
     () => ({
       abrirEmpresa: (dados = null, tab) => setEmpresa({ dados, tab }),
       abrirEvento: (dados = null) => setEvento({ dados }),
+      abrirImovel: (dados = null, tab) => setImovel({ dados, tab }),
+      abrirCarEvento: (dados = null) => setCarEvento({ dados }),
     }),
     []
   );
@@ -22,6 +27,8 @@ export function ModaisProvider({ children }) {
       {children}
       <EmpresaForm open={!!empresa} empresa={empresa?.dados} tabInicial={empresa?.tab} onClose={() => setEmpresa(null)} />
       <EventoForm open={!!evento} evento={evento?.dados} onClose={() => setEvento(null)} />
+      <ImovelForm open={!!imovel} imovel={imovel?.dados} tabInicial={imovel?.tab} onClose={() => setImovel(null)} />
+      <EventoForm modulo="car" open={!!carEvento} evento={carEvento?.dados} onClose={() => setCarEvento(null)} />
     </ModaisCtx.Provider>
   );
 }

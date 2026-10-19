@@ -12,7 +12,10 @@ import { excluirArquivo, limparArquivos } from './arquivos';
 // A tela é atualizada na hora (otimista) e a gravação no banco acontece em seguida.
 const KEY = 'vacg-gestao:v1';
 const NUVEM = !!supabase;
-const VAZIO = { empresas: [], eventos: [], exemplo: false };
+const VAZIO = { empresas: [], eventos: [], imoveis: [], carEventos: [], exemplo: false };
+
+// Garante as listas do CAR em dados salvos antes de o módulo existir
+const normalizar = (d) => ({ ...VAZIO, ...d, imoveis: d?.imoveis || [], carEventos: d?.carEventos || [] });
 
 export function lerLocal() {
   try {
@@ -36,7 +39,7 @@ const StoreCtx = createContext(null);
 
 export function StoreProvider({ children }) {
   const { toast } = useUI();
-  const [state, setState] = useState(() => (NUVEM ? VAZIO : lerLocal() || criarExemplo()));
+  const [state, setState] = useState(() => (NUVEM ? VAZIO : normalizar(lerLocal() || criarExemplo())));
   const [sessao, setSessao] = useState(null);
   // iniciando → sem-sessao | carregando → pronto
   const [fase, setFase] = useState(NUVEM ? 'iniciando' : 'pronto');
@@ -73,7 +76,7 @@ export function StoreProvider({ children }) {
   const recarregar = useCallback(async () => {
     try {
       const dados = await db.carregarTudo();
-      setState({ ...dados, exemplo: false });
+      setState(normalizar({ ...dados, exemplo: false }));
     } catch (e) {
       toast(`Erro ao carregar dados: ${e.message}`, 'error');
     } finally {
@@ -129,6 +132,49 @@ export function StoreProvider({ children }) {
     };
     const semErro = (p) => p.catch(() => {});
 
+    // Ações de eventos de controle para uma coleção (eventos das empresas ou do CAR)
+    const acoesEventos = (chave, salvarNoBanco, tabela) => ({
+      salvar(evento) {
+        const ev = { status: 'pendente', concluidoEm: null, ...evento, id: evento.id || uid(), criadoEm: evento.criadoEm || agora() };
+        setState((s) => ({ ...s, [chave]: upsert(s[chave], ev) }));
+        semErro(remoto(() => salvarNoBanco([ev])));
+        return ev;
+      },
+      salvarVarios(lista) {
+        const novos = lista.map((ev) => ({ status: 'pendente', concluidoEm: null, ...ev, id: uid(), criadoEm: agora() }));
+        setState((s) => ({ ...s, [chave]: [...s[chave], ...novos] }));
+        semErro(remoto(() => salvarNoBanco(novos)));
+      },
+      excluir(id) {
+        setState((s) => ({ ...s, [chave]: s[chave].filter((e) => e.id !== id) }));
+        semErro(remoto(() => db.excluir(tabela, id)));
+      },
+      // Conclui o evento; se for recorrente, já agenda a próxima ocorrência.
+      // Retorna a data da próxima ocorrência (ou null).
+      concluir(ev) {
+        const concluido = { ...ev, status: 'concluido', concluidoEm: hojeISO() };
+        const recorrente = ev.recorrencia && ev.recorrencia !== 'nenhuma';
+        const proximo = recorrente
+          ? { ...ev, id: uid(), status: 'pendente', concluidoEm: null, dataVencimento: proximaData(ev.dataVencimento, ev.recorrencia), criadoEm: agora() }
+          : null;
+        setState((s) => ({
+          ...s,
+          [chave]: [...s[chave].map((x) => (x.id === ev.id ? concluido : x)), ...(proximo ? [proximo] : [])],
+        }));
+        semErro(remoto(() => salvarNoBanco(proximo ? [concluido, proximo] : [concluido])));
+        return proximo?.dataVencimento ?? null;
+      },
+      reabrir(id) {
+        const ev = stateRef.current[chave].find((x) => x.id === id);
+        if (!ev) return;
+        const reaberto = { ...ev, status: 'pendente', concluidoEm: null };
+        setState((s) => ({ ...s, [chave]: s[chave].map((x) => (x.id === id ? reaberto : x)) }));
+        semErro(remoto(() => salvarNoBanco([reaberto])));
+      },
+    });
+    const eventosAmbiental = acoesEventos('eventos', db.salvarEventos, 'eventos');
+    const eventosCar = acoesEventos('carEventos', db.salvarCarEventos, 'car_eventos');
+
     return {
       salvarEmpresa(emp) {
         const e = { ...emp, id: emp.id || uid(), criadoEm: emp.criadoEm || agora(), atualizadoEm: agora() };
@@ -150,6 +196,7 @@ export function StoreProvider({ children }) {
           ...s,
           empresas: s.empresas.filter((e) => e.id !== id),
           eventos: s.eventos.filter((e) => e.empresaId !== id),
+          imoveis: s.imoveis.map((im) => (im.empresaId === id ? { ...im, empresaId: '' } : im)),
         }));
         semErro(remoto(() => db.excluir('empresas', id)));
       },
@@ -176,61 +223,53 @@ export function StoreProvider({ children }) {
         }));
         semErro(remoto(() => db.excluir('condicionantes', condId)));
       },
-      salvarEvento(evento) {
-        const ev = {
-          status: 'pendente',
-          concluidoEm: null,
-          ...evento,
-          id: evento.id || uid(),
-          criadoEm: evento.criadoEm || agora(),
-        };
-        setState((s) => ({ ...s, eventos: upsert(s.eventos, ev) }));
-        semErro(remoto(() => db.salvarEventos([ev])));
-        return ev;
+      // Eventos de controle: os do licenciamento (empresas) e os do CAR (imóveis)
+      salvarEvento: eventosAmbiental.salvar,
+      salvarEventos: eventosAmbiental.salvarVarios,
+      excluirEvento: eventosAmbiental.excluir,
+      concluirEvento: eventosAmbiental.concluir,
+      reabrirEvento: eventosAmbiental.reabrir,
+      salvarCarEvento: eventosCar.salvar,
+      salvarCarEventos: eventosCar.salvarVarios,
+      excluirCarEvento: eventosCar.excluir,
+      concluirCarEvento: eventosCar.concluir,
+      reabrirCarEvento: eventosCar.reabrir,
+
+      // ---------- CAR: imóveis rurais ----------
+      salvarImovel(im) {
+        const i = { ...im, id: im.id || uid(), criadoEm: im.criadoEm || agora(), atualizadoEm: agora() };
+        setState((s) => ({ ...s, imoveis: upsert(s.imoveis, i) }));
+        semErro(remoto(() => db.salvarImovel(i)));
+        return i;
       },
-      salvarEventos(lista) {
-        const novos = lista.map((ev) => ({ status: 'pendente', concluidoEm: null, ...ev, id: uid(), criadoEm: agora() }));
-        setState((s) => ({ ...s, eventos: [...s.eventos, ...novos] }));
-        semErro(remoto(() => db.salvarEventos(novos)));
+      atualizarImovel(id, fn) {
+        const atual = stateRef.current.imoveis.find((im) => im.id === id);
+        if (!atual) return;
+        const novo = { ...fn(atual), atualizadoEm: agora() };
+        setState((s) => ({ ...s, imoveis: s.imoveis.map((im) => (im.id === id ? novo : im)) }));
+        semErro(remoto(() => db.salvarImovel(novo)));
       },
-      excluirEvento(id) {
-        setState((s) => ({ ...s, eventos: s.eventos.filter((e) => e.id !== id) }));
-        semErro(remoto(() => db.excluir('eventos', id)));
-      },
-      // Conclui o evento; se for recorrente, já agenda a próxima ocorrência.
-      // Retorna a data da próxima ocorrência (ou null).
-      concluirEvento(ev) {
-        const concluido = { ...ev, status: 'concluido', concluidoEm: hojeISO() };
-        const recorrente = ev.recorrencia && ev.recorrencia !== 'nenhuma';
-        const proximo = recorrente
-          ? { ...ev, id: uid(), status: 'pendente', concluidoEm: null, dataVencimento: proximaData(ev.dataVencimento, ev.recorrencia), criadoEm: agora() }
-          : null;
+      excluirImovel(id) {
+        (stateRef.current.imoveis.find((im) => im.id === id)?.anexos || []).forEach((a) => excluirArquivo(a.id));
         setState((s) => ({
           ...s,
-          eventos: [...s.eventos.map((x) => (x.id === ev.id ? concluido : x)), ...(proximo ? [proximo] : [])],
+          imoveis: s.imoveis.filter((im) => im.id !== id),
+          carEventos: s.carEventos.filter((ev) => ev.imovelId !== id),
         }));
-        semErro(remoto(() => db.salvarEventos(proximo ? [concluido, proximo] : [concluido])));
-        return proximo?.dataVencimento ?? null;
-      },
-      reabrirEvento(id) {
-        const ev = stateRef.current.eventos.find((x) => x.id === id);
-        if (!ev) return;
-        const reaberto = { ...ev, status: 'pendente', concluidoEm: null };
-        setState((s) => ({ ...s, eventos: s.eventos.map((x) => (x.id === id ? reaberto : x)) }));
-        semErro(remoto(() => db.salvarEventos([reaberto])));
+        semErro(remoto(() => db.excluir('imoveis_car', id)));
       },
       async importar(dados) {
         if (!dados || !Array.isArray(dados.empresas) || !Array.isArray(dados.eventos)) {
           throw new Error('Arquivo inválido');
         }
-        const novo = { empresas: dados.empresas, eventos: dados.eventos, exemplo: false };
+        const novo = normalizar({ empresas: dados.empresas, eventos: dados.eventos, imoveis: dados.imoveis, carEventos: dados.carEventos });
         setState(novo);
         await remoto(() => db.substituirTudo(novo));
       },
       async carregarExemplo() {
         const ex = criarExemplo();
         limparArquivos();
-        setState({ ...ex, exemplo: !NUVEM });
+        setState(normalizar({ ...ex, exemplo: !NUVEM }));
         await remoto(() => db.substituirTudo(ex));
       },
       async limparTudo() {
@@ -276,9 +315,11 @@ export function StoreProvider({ children }) {
 
   const value = useMemo(() => {
     const empresaPorId = Object.fromEntries(state.empresas.map((e) => [e.id, e]));
+    const imovelPorId = Object.fromEntries(state.imoveis.map((im) => [im.id, im]));
     return {
       ...state,
       empresaPorId,
+      imovelPorId,
       nuvem: NUVEM,
       fase,
       usuario: sessao?.user ?? null,

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Users, History, RefreshCw, ChevronDown, LogIn, Building2, CalendarClock, ClipboardCheck, Paperclip, Wallet,
-  ShieldCheck, UserPlus, Info,
+  ShieldCheck, UserPlus, Info, Trees,
 } from 'lucide-react';
 import { useStore } from '../store';
 import { useUI, Tabs, Chips, EmptyState, Badge } from '../components/ui';
 import * as db from '../db';
 import { corDe, fmtData, MESES } from '../utils';
+import { SITUACOES_CAR, CONDICOES_CAR, BIOMAS_RL, SITUACOES_RL } from '../car';
 
 // ---------- Textos do registro de atividades ----------
 const TABELAS = {
@@ -15,15 +16,20 @@ const TABELAS = {
   condicionantes: { artigo: 'a condicionante', icon: ClipboardCheck, label: 'Condicionantes' },
   anexos: { artigo: 'o documento', icon: Paperclip, label: 'Documentos' },
   mensalidades: { artigo: 'a mensalidade', icon: Wallet, label: 'Mensalidades' },
+  imoveis_car: { artigo: 'o imóvel', icon: Trees, label: 'CAR · Imóveis', car: true },
+  car_pendencias: { artigo: 'a pendência', icon: ClipboardCheck, label: 'CAR · Pendências', car: true },
+  car_eventos: { artigo: 'o evento do CAR', icon: CalendarClock, label: 'CAR · Eventos', car: true },
+  car_anexos: { artigo: 'o documento do CAR', icon: Paperclip, label: 'CAR · Documentos', car: true },
 };
 
 const VERBOS = { criou: 'criou', editou: 'editou', excluiu: 'excluiu', concluiu: 'concluiu', reabriu: 'reabriu' };
 
 function verbo(a) {
-  if (a.acao === 'criou' && a.tabela === 'anexos') return 'anexou';
+  if (a.acao === 'criou' && (a.tabela === 'anexos' || a.tabela === 'car_anexos')) return 'anexou';
+  if (a.acao === 'criou' && a.tabela === 'imoveis_car') return 'cadastrou';
   if (a.acao === 'criou' && a.tabela === 'empresas') return 'cadastrou';
   if (a.acao === 'criou' && a.tabela === 'mensalidades') return 'configurou';
-  if (a.acao === 'excluiu' && a.tabela === 'anexos') return 'removeu';
+  if (a.acao === 'excluiu' && (a.tabela === 'anexos' || a.tabela === 'car_anexos')) return 'removeu';
   return VERBOS[a.acao] || a.acao;
 }
 
@@ -36,11 +42,22 @@ const CAMPOS = {
   tipo: 'Tipo', titulo: 'Título', documento: 'Documento', data_vencimento: 'Vencimento',
   antecedencia_dias: 'Aviso (dias antes)', recorrencia: 'Repetição', concluido_em: 'Concluído em', nome: 'Nome',
   categoria: 'Categoria', validade: 'Validade',
+  codigo_car: 'Nº do CAR', situacao: 'Situação do cadastro', condicao: 'Condição da análise', data_inscricao: 'Inscrição',
+  data_retificacao: 'Última retificação', municipio: 'Município', areas: 'Áreas', proprietarios: 'Proprietários',
+  matriculas: 'Matrículas', ccir: 'CCIR', nirf: 'NIRF / CIB', pra: 'PRA', origem: 'Origem',
   // dentro da mensalidade
   ativa: 'Cobrança ativa', valor: 'Valor', diaVencimento: 'Dia do vencimento', formaPagamento: 'Forma de pagamento',
   inicio: 'Cobrança a partir de',
 };
-const IGNORAR = new Set(['id', 'empresa_id', 'criado_em', 'criado_por', 'atualizado_em', 'enviado_em', 'enviado_por', 'ordem', 'condicionante_id', 'tamanho', 'longitude']);
+const IGNORAR = new Set(['id', 'empresa_id', 'imovel_id', 'pendencia_id', 'criado_em', 'criado_por', 'atualizado_em', 'enviado_em', 'enviado_por', 'ordem', 'condicionante_id', 'tamanho', 'longitude']);
+
+const SUBCAMPOS = {
+  total: 'Área total (ha)', modulos: 'Módulos fiscais', bioma: 'Região / bioma', app: 'APP (ha)', rl: 'Reserva Legal (ha)',
+  rlSituacao: 'Situação da RL', vegetacao: 'Vegetação nativa (ha)', consolidada: 'Área consolidada (ha)',
+  usoRestrito: 'Uso restrito (ha)', deficitRl: 'Déficit de RL (ha)', appRecompor: 'APP a recompor (ha)',
+  adesao: 'Adesão ao PRA', termo: 'Termo de compromisso', orgao: 'Órgão', dataAdesao: 'Data de adesão',
+  prazoFinal: 'Prazo final do PRA', compromissos: 'Compromissos',
+};
 
 function fmtValor(campo, v) {
   if (v === null || v === undefined || v === '') return '—';
@@ -83,12 +100,31 @@ function mudancas(a) {
   const linhas = [];
   Object.keys({ ...antes, ...depois }).forEach((k) => {
     if (IGNORAR.has(k) || JSON.stringify(antes[k]) === JSON.stringify(depois[k])) return;
-    if (k === 'servicos') {
+    // Listas (serviços, proprietários, matrículas): o que entrou, saiu ou mudou
+    const LISTAS = { servicos: 'o serviço', proprietarios: 'o proprietário', matriculas: 'a matrícula' };
+    if (LISTAS[k]) {
+      const nomeItem = (s) => s.nome || s.numero || '—';
       const ia = Object.fromEntries((antes[k] || []).map((s) => [s.id, s]));
       const id = Object.fromEntries((depois[k] || []).map((s) => [s.id, s]));
-      Object.values(id).filter((s) => !ia[s.id]).forEach((s) => linhas.push({ texto: `Adicionou o serviço "${s.nome}"` }));
-      Object.values(ia).filter((s) => !id[s.id]).forEach((s) => linhas.push({ texto: `Removeu o serviço "${s.nome}"` }));
-      Object.values(id).filter((s) => ia[s.id] && JSON.stringify(ia[s.id]) !== JSON.stringify(s)).forEach((s) => linhas.push({ texto: `Alterou o serviço "${s.nome}"` }));
+      Object.values(id).filter((s) => !ia[s.id]).forEach((s) => linhas.push({ texto: `Adicionou ${LISTAS[k]} "${nomeItem(s)}"` }));
+      Object.values(ia).filter((s) => !id[s.id]).forEach((s) => linhas.push({ texto: `Removeu ${LISTAS[k]} "${nomeItem(s)}"` }));
+      Object.values(id).filter((s) => ia[s.id] && JSON.stringify(ia[s.id]) !== JSON.stringify(s)).forEach((s) => linhas.push({ texto: `Alterou ${LISTAS[k]} "${nomeItem(s)}"` }));
+      return;
+    }
+    // Objetos do CAR (áreas e PRA): campo a campo
+    if (k === 'areas' || k === 'pra') {
+      const oa = antes[k] || {};
+      const od = depois[k] || {};
+      Object.keys({ ...oa, ...od }).forEach((sub) => {
+        if (JSON.stringify(oa[sub]) === JSON.stringify(od[sub]) || sub === 'gerarEvento') return;
+        const v = (x) => (sub === 'bioma' ? BIOMAS_RL[x]?.label : sub === 'rlSituacao' ? SITUACOES_RL[x] : x);
+        linhas.push({ campo: SUBCAMPOS[sub] || sub, de: fmtValor(sub, v(oa[sub])), para: fmtValor(sub, v(od[sub])) });
+      });
+      return;
+    }
+    if (k === 'situacao' || k === 'condicao') {
+      const mapa = k === 'situacao' ? SITUACOES_CAR : CONDICOES_CAR;
+      linhas.push({ campo: CAMPOS[k], de: mapa[antes[k]]?.label || '—', para: mapa[depois[k]]?.label || '—' });
       return;
     }
     linhas.push({ campo: CAMPOS[k] || k, de: fmtValor(k, antes[k]), para: fmtValor(k, depois[k]) });
@@ -172,7 +208,7 @@ export default function Equipe() {
 
 // ---------- Aba: atividades ----------
 function Atividades({ perfis }) {
-  const { empresaPorId } = useStore();
+  const { empresaPorId, imovelPorId } = useStore();
   const { toast } = useUI();
   const [lista, setLista] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -276,7 +312,8 @@ function Atividades({ perfis }) {
                 const T = TABELAS[a.tabela];
                 const Icone = a.acao === 'entrou' ? LogIn : T?.icon || History;
                 const linhas = mudancas(a);
-                const empresaExiste = a.empresa_id && empresaPorId[a.empresa_id];
+                const ehCar = !!T?.car;
+                const empresaExiste = a.empresa_id && (ehCar ? imovelPorId[a.empresa_id] : empresaPorId[a.empresa_id]);
                 const expandido = aberto === a.id;
                 return (
                   <div key={a.id} className={`feed-item ac-${a.acao}`}>
@@ -292,7 +329,7 @@ function Atividades({ perfis }) {
                         ) : (
                           <>
                             {verbo(a)} {T?.artigo} <b>{a.descricao || '—'}</b>
-                            {a.tabela !== 'empresas' && a.empresa_nome && <> em <span className="feed-empresa">{a.empresa_nome}</span></>}
+                            {!['empresas', 'imoveis_car'].includes(a.tabela) && a.empresa_nome && <> {ehCar ? 'no imóvel' : 'em'} <span className="feed-empresa">{a.empresa_nome}</span></>}
                           </>
                         )}
                       </div>
@@ -313,7 +350,7 @@ function Atividades({ perfis }) {
                             </div>
                           )
                         )}
-                        {empresaExiste && <a className="link" href={`#/empresas/${a.empresa_id}`}>Abrir empresa →</a>}
+                        {empresaExiste && <a className="link" href={ehCar ? `#/car/imoveis/${a.empresa_id}` : `#/empresas/${a.empresa_id}`}>{ehCar ? "Abrir imóvel →" : "Abrir empresa →"}</a>}
                       </div>
                     )}
                   </div>

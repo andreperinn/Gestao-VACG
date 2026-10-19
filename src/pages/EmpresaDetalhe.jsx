@@ -7,12 +7,13 @@ import { useStore } from '../store';
 import { useModais } from '../components/modais';
 import { Avatar, Badge, Chips, EmptyState, Tabs, useUI } from '../components/ui';
 import EventoItem from '../components/EventoItem';
-import { STATUS_COND, TIPOS_EVENTO } from '../constants';
+import { STATUS_COND } from '../constants';
 import { nomeEmpresa, statusEvento, statusEmpresa, STATUS, fmtData, soDigitos, RECORRENCIAS, textoPrazo } from '../utils';
 import { navigate } from '../router';
 import { MapaPonto, LinksMapa } from '../components/Mapa';
 import { ServicosTab, MensalidadeTab, DocumentosTab } from './EmpresaAbas';
 import { mesesAtrasados } from '../mensalidade';
+import { useModulo } from '../modulos';
 
 export default function EmpresaDetalhe({ id }) {
   const { empresaPorId, eventos, excluirEmpresa, ehAdmin } = useStore();
@@ -287,7 +288,7 @@ function CondicionantesTab({ e, evs }) {
   );
 }
 
-function EventosTab({ evs, onNovo }) {
+export function EventosTab({ evs, onNovo, modulo = 'ambiental' }) {
   const [filtro, setFiltro] = useState('abertos');
   const abertos = evs.filter((x) => x.status !== 'concluido');
   const concluidos = evs.filter((x) => x.status === 'concluido');
@@ -310,15 +311,15 @@ function EventosTab({ evs, onNovo }) {
           action={<button className="btn btn-primary" onClick={onNovo}><Plus size={16} /> Criar evento</button>} />
       ) : (
         <div className="card evento-list">
-          {lista.map((ev) => <EventoItem key={ev.id} ev={ev} showEmpresa={false} />)}
+          {lista.map((ev) => <EventoItem key={ev.id} ev={ev} showEmpresa={false} modulo={modulo} />)}
         </div>
       )}
     </div>
   );
 }
 
-function Historico({ evs }) {
-  const { abrirEvento } = useModais();
+export function Historico({ evs, modulo = 'ambiental' }) {
+  const { abrirEvento, tipos } = useModulo(modulo);
   const itens = evs
     .map((ev) => ({ ev, data: ev.status === 'concluido' ? ev.concluidoEm || ev.dataVencimento : ev.dataVencimento }))
     .sort((a, b) => b.data.localeCompare(a.data));
@@ -329,7 +330,7 @@ function Historico({ evs }) {
     <div className="card">
       <ol className="timeline">
         {itens.map(({ ev, data }) => {
-          const T = TIPOS_EVENTO[ev.tipo] || TIPOS_EVENTO.outro;
+          const T = tipos[ev.tipo] || tipos.outro;
           const st = statusEvento(ev);
           return (
             <li key={ev.id} className={`tl-item st-${st}`} onClick={() => abrirEvento(ev)}>

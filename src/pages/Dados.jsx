@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import {
-  Download, Upload, RotateCcw, Eraser, Database, Building2, CalendarClock, ClipboardCheck, Info, Cloud, CloudUpload, LogOut, HardDrive, KeyRound,
+  Download, Upload, RotateCcw, Eraser, Database, Building2, CalendarClock, ClipboardCheck, Info, Cloud, CloudUpload, LogOut, HardDrive, KeyRound, Trees,
 } from 'lucide-react';
 import { useStore, lerLocal } from '../store';
 import { useUI } from '../components/ui';
@@ -8,7 +8,7 @@ import { AlterarSenha } from './Login';
 import { hojeISO } from '../utils';
 
 export default function Dados() {
-  const { empresas, eventos, importar, carregarExemplo, limparTudo, nuvem, usuario, perfil, ehAdmin, sair, enviarLocalParaNuvem } = useStore();
+  const { empresas, eventos, imoveis, carEventos, importar, carregarExemplo, limparTudo, nuvem, usuario, perfil, ehAdmin, sair, enviarLocalParaNuvem } = useStore();
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const { toast, confirm } = useUI();
   const inputRef = useRef(null);
@@ -31,7 +31,7 @@ export default function Dados() {
   };
 
   const exportar = () => {
-    const blob = new Blob([JSON.stringify({ versao: 1, exportadoEm: new Date().toISOString(), empresas, eventos }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ versao: 2, exportadoEm: new Date().toISOString(), empresas, eventos, imoveis, carEventos }, null, 2)], {
       type: 'application/json',
     });
     const a = document.createElement('a');
@@ -56,7 +56,7 @@ export default function Dados() {
     }
     const ok = await confirm({
       title: 'Restaurar backup?',
-      message: `Os dados atuais serão substituídos por ${dados.empresas.length} empresa(s) e ${dados.eventos.length} evento(s) do arquivo.`,
+      message: `Os dados atuais serão substituídos por ${dados.empresas.length} empresa(s), ${dados.eventos.length} evento(s) e ${dados.imoveis?.length ?? 0} imóvel(is) do CAR do arquivo.`,
       confirmLabel: 'Restaurar',
     });
     if (ok) executar(() => importar(dados), 'Backup restaurado');
@@ -107,10 +107,11 @@ export default function Dados() {
         </div>
       )}
 
-      <div className="kpis kpis-3">
+      <div className="kpis">
         <div className="kpi static"><div className="kpi-icon" style={{ '--c': '#15803d' }}><Building2 size={22} /></div><div><div className="kpi-valor">{empresas.length}</div><div className="kpi-label">Empresas</div></div></div>
         <div className="kpi static"><div className="kpi-icon" style={{ '--c': '#7c3aed' }}><ClipboardCheck size={22} /></div><div><div className="kpi-valor">{nCond}</div><div className="kpi-label">Condicionantes</div></div></div>
         <div className="kpi static"><div className="kpi-icon" style={{ '--c': '#0891b2' }}><CalendarClock size={22} /></div><div><div className="kpi-valor">{eventos.length}</div><div className="kpi-label">Eventos</div></div></div>
+        <div className="kpi static"><div className="kpi-icon" style={{ '--c': '#4d7c0f' }}><Trees size={22} /></div><div><div className="kpi-valor">{imoveis.length}</div><div className="kpi-label">Imóveis do CAR</div></div></div>
       </div>
 
       {!nuvem && (

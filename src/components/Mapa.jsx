@@ -227,7 +227,7 @@ export function MapaPonto({ ponto, altura = 220 }) {
 }
 
 // ---------- Todas as empresas no mapa ----------
-export function MapaEmpresas({ itens, altura = 520 }) {
+export function MapaEmpresas({ itens, altura = 520, rota = (id) => `#/empresas/${id}`, textoLink = "Abrir empresa →" }) {
   const elRef = useRef(null);
   const mapRef = useLeaflet(elRef);
   useEffect(() => {
@@ -241,8 +241,8 @@ export function MapaEmpresas({ itens, altura = 520 }) {
       const s = document.createElement('span');
       s.textContent = detalhe || '';
       const a = document.createElement('a');
-      a.href = `#/empresas/${id}`;
-      a.textContent = 'Abrir empresa →';
+      a.href = rota(id);
+      a.textContent = textoLink;
       div.append(b, s, a);
       L.marker([ponto.lat, ponto.lng], { icon: pino(COR_STATUS[st]) }).bindPopup(div).bindTooltip(nome).addTo(grupo);
     });

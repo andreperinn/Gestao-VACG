@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard, Building2, CalendarDays, BellRing, Database, Leaf, Plus, Search, CalendarPlus, X, LogOut, Cloud, HardDrive, Users, KeyRound,
+  Trees,
 } from 'lucide-react';
 import { useRoute, navigate } from './router';
 import { useStore } from './store';
@@ -8,6 +9,7 @@ import { ModaisProvider, useModais } from './components/modais';
 import { useUI } from './components/ui';
 import { statusEvento, nomeEmpresa, normalizar, fmtData } from './utils';
 import { TIPOS_EVENTO } from './constants';
+import { TIPOS_EVENTO_CAR, nomeImovel } from './car';
 import Dashboard from './pages/Dashboard';
 import Empresas from './pages/Empresas';
 import EmpresaDetalhe from './pages/EmpresaDetalhe';
@@ -16,6 +18,9 @@ import Alertas from './pages/Alertas';
 import Dados from './pages/Dados';
 import Login, { NovaSenha, Carregando, Bloqueado, AlterarSenha } from './pages/Login';
 import Equipe from './pages/Equipe';
+import CarPainel from './pages/CarPainel';
+import CarImoveis from './pages/CarImoveis';
+import CarDetalhe from './pages/CarDetalhe';
 
 export default function App() {
   const { nuvem, fase, recuperandoSenha } = useStore();
@@ -32,27 +37,53 @@ export default function App() {
   );
 }
 
-const NAV = [
-  { path: '/', label: 'Painel', icon: LayoutDashboard },
-  { path: '/empresas', label: 'Empresas', icon: Building2 },
-  { path: '/agenda', label: 'Agenda', icon: CalendarDays },
-  { path: '/alertas', label: 'Alertas', icon: BellRing, badge: true },
-  { path: '/dados', label: 'Dados', icon: Database },
-  { path: '/equipe', label: 'Equipe', icon: Users, admin: true },
+// Menus de cada módulo. "chave" identifica o item ativo a partir da rota.
+const NAV_AMBIENTAL = [
+  { path: '/', chave: 'painel', label: 'Painel', icon: LayoutDashboard },
+  { path: '/empresas', chave: 'empresas', label: 'Empresas', icon: Building2 },
+  { path: '/agenda', chave: 'agenda', label: 'Agenda', icon: CalendarDays },
+  { path: '/alertas', chave: 'alertas', label: 'Alertas', icon: BellRing, badge: 'ambiental' },
+];
+const NAV_CAR = [
+  { path: '/car', chave: 'car-painel', label: 'Painel CAR', curto: 'Painel', icon: LayoutDashboard },
+  { path: '/car/imoveis', chave: 'car-imoveis', label: 'Imóveis rurais', curto: 'Imóveis', icon: Trees },
+  { path: '/car/agenda', chave: 'car-agenda', label: 'Agenda CAR', curto: 'Agenda', icon: CalendarDays },
+  { path: '/car/alertas', chave: 'car-alertas', label: 'Alertas CAR', curto: 'Alertas', icon: BellRing, badge: 'car' },
+];
+const NAV_GERAL = [
+  { path: '/dados', chave: 'dados', label: 'Dados', icon: Database },
+  { path: '/equipe', chave: 'equipe', label: 'Equipe', icon: Users, admin: true },
 ];
 
 function Shell() {
   const rota = useRoute();
-  const { eventos, ehAdmin, nuvem } = useStore();
-  const { abrirEmpresa, abrirEvento } = useModais();
+  const { eventos, carEventos, ehAdmin, nuvem } = useStore();
+  const { abrirEmpresa, abrirEvento, abrirImovel, abrirCarEvento } = useModais();
   const [menuNovo, setMenuNovo] = useState(false);
 
   const partes = rota.split('/').filter(Boolean);
-  const base = '/' + (partes[0] || '');
-  const nAlertas = eventos.filter((e) => ['vencido', 'alerta'].includes(statusEvento(e))).length;
+  const emCar = partes[0] === 'car';
+  // O módulo atual vem da rota; nas telas gerais (Dados, Equipe) vale o último usado
+  const [moduloSalvo, setModuloSalvo] = useState('ambiental');
+  const ehGeral = ['dados', 'equipe'].includes(partes[0]);
+  const modulo = emCar ? 'car' : ehGeral ? moduloSalvo : 'ambiental';
+  useEffect(() => {
+    if (!ehGeral) setModuloSalvo(emCar ? 'car' : 'ambiental');
+  }, [emCar, ehGeral]);
+
+  const chaveAtiva = emCar ? `car-${partes[1] || 'painel'}` : partes[0] || 'painel';
+  const contar = (lista) => lista.filter((e) => ['vencido', 'alerta'].includes(statusEvento(e))).length;
+  const alertas = { ambiental: contar(eventos), car: contar(carEventos) };
+  const navModulo = modulo === 'car' ? NAV_CAR : NAV_AMBIENTAL;
+  const navGeral = NAV_GERAL.filter((n) => !n.admin || (ehAdmin && nuvem));
 
   let pagina;
-  if (partes[0] === 'empresas' && partes[1]) pagina = <EmpresaDetalhe id={partes[1]} />;
+  if (emCar && partes[1] === 'imoveis' && partes[2]) pagina = <CarDetalhe id={partes[2]} />;
+  else if (emCar && partes[1] === 'imoveis') pagina = <CarImoveis />;
+  else if (emCar && partes[1] === 'agenda') pagina = <Agenda modulo="car" />;
+  else if (emCar && partes[1] === 'alertas') pagina = <Alertas modulo="car" filtroInicial={partes[2]} />;
+  else if (emCar) pagina = <CarPainel />;
+  else if (partes[0] === 'empresas' && partes[1]) pagina = <EmpresaDetalhe id={partes[1]} />;
   else if (partes[0] === 'empresas') pagina = <Empresas />;
   else if (partes[0] === 'agenda') pagina = <Agenda />;
   else if (partes[0] === 'alertas') pagina = <Alertas filtroInicial={partes[1]} />;
@@ -63,8 +94,19 @@ function Shell() {
   const novo = (tipo) => {
     setMenuNovo(false);
     if (tipo === 'empresa') abrirEmpresa();
-    else abrirEvento(partes[0] === 'empresas' && partes[1] ? { empresaId: partes[1] } : null);
+    else if (tipo === 'evento') abrirEvento(partes[0] === 'empresas' && partes[1] ? { empresaId: partes[1] } : null);
+    else if (tipo === 'imovel') abrirImovel();
+    else abrirCarEvento(emCar && partes[1] === 'imoveis' && partes[2] ? { imovelId: partes[2] } : null);
   };
+
+  const opcoesNovo = [
+    { tipo: 'empresa', icon: Building2, cor: '#15803d', titulo: 'Nova empresa', texto: 'Dados cadastrais e condicionantes ambientais', modulo: 'ambiental' },
+    { tipo: 'evento', icon: CalendarPlus, cor: '#0891b2', titulo: 'Novo evento de controle', texto: 'Aviso de vencimento de licença, análise, taxa…', modulo: 'ambiental' },
+    { tipo: 'imovel', icon: Trees, cor: '#4d7c0f', titulo: 'Novo imóvel rural (CAR)', texto: 'Recibo do CAR, áreas, proprietários, PRA e pendências', modulo: 'car' },
+    { tipo: 'car-evento', icon: CalendarPlus, cor: '#7c3aed', titulo: 'Novo evento do CAR', texto: 'Retificação, notificação, PRA, recomposição…', modulo: 'car' },
+  ];
+  // Opções do módulo atual aparecem primeiro
+  opcoesNovo.sort((a, b) => (a.modulo === modulo ? -1 : 0) - (b.modulo === modulo ? -1 : 0));
 
   return (
     <div className="app">
@@ -76,17 +118,14 @@ function Shell() {
             <span>Gestão Ambiental</span>
           </div>
         </a>
+        <TrocaModulo modulo={modulo} />
         <button className="btn btn-primary btn-block" onClick={() => setMenuNovo(true)}>
           <Plus size={18} /> Novo cadastro
         </button>
         <nav className="nav">
-          {NAV.filter((n) => !n.admin || (ehAdmin && nuvem)).map((n) => (
-            <a key={n.path} href={`#${n.path}`} className={`nav-item${base === n.path ? ' active' : ''}`}>
-              <n.icon size={19} />
-              <span>{n.label}</span>
-              {n.badge && nAlertas > 0 && <span className="nav-badge">{nAlertas}</span>}
-            </a>
-          ))}
+          {navModulo.map((n) => <ItemMenu key={n.path} n={n} ativo={chaveAtiva === n.chave} count={n.badge ? alertas[n.badge] : 0} />)}
+          <div className="nav-sep" />
+          {navGeral.map((n) => <ItemMenu key={n.path} n={n} ativo={chaveAtiva === n.chave} />)}
         </nav>
         <ContaRodape />
       </aside>
@@ -95,15 +134,15 @@ function Shell() {
         <header className="topbar">
           <a href="#/" className="brand brand-mobile">
             <div className="brand-logo"><Leaf size={18} /></div>
-            <strong>VACG</strong>
           </a>
+          <TrocaModulo modulo={modulo} compacto />
           <BuscaGlobal />
           <a href="#/dados" className="icon-btn topbar-dados" title="Dados e conta">
             <Database size={20} />
           </a>
-          <a href="#/alertas" className="icon-btn topbar-bell" title="Alertas">
+          <a href={modulo === 'car' ? '#/car/alertas' : '#/alertas'} className="icon-btn topbar-bell" title="Alertas">
             <BellRing size={20} />
-            {nAlertas > 0 && <span className="dot-count">{nAlertas}</span>}
+            {alertas[modulo] > 0 && <span className="dot-count">{alertas[modulo]}</span>}
           </a>
         </header>
         <main className="content" key={rota}>
@@ -112,11 +151,11 @@ function Shell() {
       </div>
 
       <nav className="bottom-nav">
-        {NAV.slice(0, 2).map((n) => <BottomItem key={n.path} n={n} ativo={base === n.path} />)}
+        {navModulo.slice(0, 2).map((n) => <BottomItem key={n.path} n={n} ativo={chaveAtiva === n.chave} />)}
         <button className="fab" onClick={() => setMenuNovo(true)} aria-label="Novo cadastro">
           <Plus size={26} />
         </button>
-        {NAV.slice(2, 4).map((n) => <BottomItem key={n.path} n={n} ativo={base === n.path} count={n.badge ? nAlertas : 0} />)}
+        {navModulo.slice(2, 4).map((n) => <BottomItem key={n.path} n={n} ativo={chaveAtiva === n.chave} count={n.badge ? alertas[n.badge] : 0} />)}
       </nav>
 
       {menuNovo && (
@@ -126,24 +165,43 @@ function Shell() {
               <h3>O que deseja cadastrar?</h3>
               <button className="icon-btn" onClick={() => setMenuNovo(false)} aria-label="Fechar"><X size={20} /></button>
             </div>
-            <button className="sheet-option" onClick={() => novo('empresa')}>
-              <div className="sheet-icon" style={{ '--c': '#15803d' }}><Building2 size={22} /></div>
-              <div>
-                <strong>Nova empresa</strong>
-                <span>Dados cadastrais e condicionantes ambientais</span>
-              </div>
-            </button>
-            <button className="sheet-option" onClick={() => novo('evento')}>
-              <div className="sheet-icon" style={{ '--c': '#0891b2' }}><CalendarPlus size={22} /></div>
-              <div>
-                <strong>Novo evento de controle</strong>
-                <span>Aviso de vencimento de licença, análise, taxa…</span>
-              </div>
-            </button>
+            {opcoesNovo.map((o) => (
+              <button key={o.tipo} className="sheet-option" onClick={() => novo(o.tipo)}>
+                <div className="sheet-icon" style={{ '--c': o.cor }}><o.icon size={22} /></div>
+                <div>
+                  <strong>{o.titulo}</strong>
+                  <span>{o.texto}</span>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// Alternância entre os módulos Ambiental (licenciamento) e CAR
+function TrocaModulo({ modulo, compacto }) {
+  return (
+    <div className={`troca-modulo${compacto ? ' compacto' : ''}`} role="tablist" aria-label="Módulo">
+      <a href="#/" role="tab" aria-selected={modulo === 'ambiental'} className={modulo === 'ambiental' ? 'active' : ''}>
+        <Leaf size={15} /> Ambiental
+      </a>
+      <a href="#/car" role="tab" aria-selected={modulo === 'car'} className={modulo === 'car' ? 'active' : ''}>
+        <Trees size={15} /> CAR
+      </a>
+    </div>
+  );
+}
+
+function ItemMenu({ n, ativo, count }) {
+  return (
+    <a href={`#${n.path}`} className={`nav-item${ativo ? ' active' : ''}`}>
+      <n.icon size={19} />
+      <span>{n.label}</span>
+      {count > 0 && <span className="nav-badge">{count}</span>}
+    </a>
   );
 }
 
@@ -188,14 +246,14 @@ function BottomItem({ n, ativo, count }) {
         <n.icon size={21} />
         {count > 0 && <span className="dot-count">{count}</span>}
       </span>
-      <span>{n.label}</span>
+      <span>{n.curto || n.label}</span>
     </a>
   );
 }
 
 function BuscaGlobal() {
-  const { empresas, eventos, empresaPorId } = useStore();
-  const { abrirEvento } = useModais();
+  const { empresas, eventos, empresaPorId, imoveis, carEventos, imovelPorId } = useStore();
+  const { abrirEvento, abrirCarEvento } = useModais();
   const [q, setQ] = useState('');
   const [aberto, setAberto] = useState(false);
   const ref = useRef(null);
@@ -212,17 +270,25 @@ function BuscaGlobal() {
     const emp = empresas
       .filter((e) => normalizar([e.razaoSocial, e.nomeFantasia, e.cnpj, e.cidade, e.responsavel].join(' ')).includes(t))
       .slice(0, 5);
-    const evs = eventos
-      .filter((e) => e.status !== 'concluido' && normalizar([e.titulo, e.documento].join(' ')).includes(t))
+    const imo = imoveis
+      .filter((im) => normalizar([im.nome, im.codigoCar, im.municipio, ...(im.proprietarios || []).map((p) => `${p.nome} ${p.documento}`)].join(' ')).includes(t))
       .slice(0, 5);
-    return { emp, evs };
-  }, [q, empresas, eventos]);
+    const evs = [
+      ...eventos.map((e) => ({ ...e, _car: false })),
+      ...carEventos.map((e) => ({ ...e, _car: true })),
+    ]
+      .filter((e) => e.status !== 'concluido' && normalizar([e.titulo, e.documento].join(' ')).includes(t))
+      .slice(0, 6);
+    return { emp, imo, evs };
+  }, [q, empresas, eventos, imoveis, carEventos]);
 
   const ir = (fn) => {
     fn();
     setQ('');
     setAberto(false);
   };
+
+  const nada = resultados && !resultados.emp.length && !resultados.imo.length && !resultados.evs.length;
 
   return (
     <div className="search" ref={ref}>
@@ -231,13 +297,13 @@ function BuscaGlobal() {
         value={q}
         onChange={(e) => { setQ(e.target.value); setAberto(true); }}
         onFocus={() => setAberto(true)}
-        placeholder="Buscar empresa, CNPJ, evento…"
+        placeholder="Buscar empresa, imóvel, CNPJ, nº do CAR, evento…"
         aria-label="Buscar"
       />
       {q && <button className="icon-btn search-clear" onClick={() => setQ('')} aria-label="Limpar"><X size={16} /></button>}
       {aberto && resultados && (
         <div className="search-results">
-          {resultados.emp.length === 0 && resultados.evs.length === 0 && <div className="search-empty">Nada encontrado para “{q}”</div>}
+          {nada && <div className="search-empty">Nada encontrado para “{q}”</div>}
           {resultados.emp.length > 0 && <div className="search-group">Empresas</div>}
           {resultados.emp.map((e) => (
             <button key={e.id} className="search-item" onClick={() => ir(() => navigate(`/empresas/${e.id}`))}>
@@ -248,15 +314,27 @@ function BuscaGlobal() {
               </div>
             </button>
           ))}
+          {resultados.imo.length > 0 && <div className="search-group">Imóveis rurais (CAR)</div>}
+          {resultados.imo.map((im) => (
+            <button key={im.id} className="search-item" onClick={() => ir(() => navigate(`/car/imoveis/${im.id}`))}>
+              <Trees size={16} />
+              <div>
+                <strong>{nomeImovel(im)}</strong>
+                <span>{im.codigoCar || [im.municipio, im.uf].filter(Boolean).join('/')}</span>
+              </div>
+            </button>
+          ))}
           {resultados.evs.length > 0 && <div className="search-group">Eventos</div>}
           {resultados.evs.map((ev) => {
-            const T = TIPOS_EVENTO[ev.tipo] || TIPOS_EVENTO.outro;
+            const tipos = ev._car ? TIPOS_EVENTO_CAR : TIPOS_EVENTO;
+            const T = tipos[ev.tipo] || tipos.outro;
+            const dono = ev._car ? nomeImovel(imovelPorId[ev.imovelId]) : nomeEmpresa(empresaPorId[ev.empresaId]);
             return (
-              <button key={ev.id} className="search-item" onClick={() => ir(() => abrirEvento(ev))}>
+              <button key={ev.id} className="search-item" onClick={() => ir(() => (ev._car ? abrirCarEvento : abrirEvento)(ev))}>
                 <T.icon size={16} style={{ color: T.cor }} />
                 <div>
                   <strong>{ev.titulo}</strong>
-                  <span>{nomeEmpresa(empresaPorId[ev.empresaId])} · {fmtData(ev.dataVencimento)}</span>
+                  <span>{ev._car ? 'CAR · ' : ''}{dono} · {fmtData(ev.dataVencimento)}</span>
                 </div>
               </button>
             );

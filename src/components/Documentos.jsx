@@ -8,9 +8,9 @@ import { Modal, Chips, EmptyState, Badge, Field, useUI } from './ui';
 const LIMITE_MB = 25;
 
 // Miniatura: mostra a própria imagem quando o arquivo é uma foto
-function Miniatura({ anexo }) {
+function Miniatura({ anexo, categorias }) {
   const [url, setUrl] = useState(null);
-  const cat = CATEGORIAS_DOC[anexo.categoria] || CATEGORIAS_DOC.outro;
+  const cat = categorias[anexo.categoria] || categorias.outro;
   useEffect(() => {
     if (!anexo.tipo?.startsWith('image/')) return;
     let u;
@@ -45,7 +45,8 @@ function Validade({ data }) {
   return <Badge cls={cls}><CalendarClock size={12} /> {txt}</Badge>;
 }
 
-export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRemover, onCriarAviso }) {
+// categorias/adivinhar: permitem usar outras categorias (ex.: documentos do CAR)
+export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRemover, onCriarAviso, categorias = CATEGORIAS_DOC, adivinhar = categoriaPorNome }) {
   const { toast } = useUI();
   const [arrastando, setArrastando] = useState(false);
   const [enviando, setEnviando] = useState(0);
@@ -71,7 +72,7 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
           nome: f.name,
           tipo: f.type,
           tamanho: f.size,
-          categoria: categoriaPorNome(f.name, f.type),
+          categoria: adivinhar(f.name, f.type),
           descricao: '',
           validade: '',
           enviadoEm: new Date().toISOString(),
@@ -109,7 +110,7 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
-  const presentes = Object.keys(CATEGORIAS_DOC).filter((k) => anexos.some((a) => a.categoria === k));
+  const presentes = Object.keys(categorias).filter((k) => anexos.some((a) => a.categoria === k));
   const lista = anexos
     .filter((a) => filtro === 'todos' || a.categoria === filtro)
     .slice()
@@ -136,7 +137,7 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
       {anexos.length > 0 && presentes.length > 1 && (
         <Chips value={filtro} onChange={setFiltro} options={[
           { id: 'todos', label: 'Todos', count: anexos.length },
-          ...presentes.map((k) => ({ id: k, label: CATEGORIAS_DOC[k].label, icon: CATEGORIAS_DOC[k].icon, count: anexos.filter((a) => a.categoria === k).length })),
+          ...presentes.map((k) => ({ id: k, label: categorias[k].label, icon: categorias[k].icon, count: anexos.filter((a) => a.categoria === k).length })),
         ]} />
       )}
 
@@ -145,12 +146,12 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
       ) : (
         <div className="doc-grid">
           {lista.map((a) => {
-            const cat = CATEGORIAS_DOC[a.categoria] || CATEGORIAS_DOC.outro;
+            const cat = categorias[a.categoria] || categorias.outro;
             const emEdicao = editando === a.id;
             return (
               <div key={a.id} className={`doc-card${emEdicao ? ' editando' : ''}`}>
                 <button type="button" className="doc-preview" onClick={() => abrir(a)} title="Visualizar">
-                  <Miniatura anexo={a} />
+                  <Miniatura anexo={a} categorias={categorias} />
                 </button>
                 <div className="doc-body">
                   {emEdicao ? (
@@ -160,7 +161,7 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
                       </Field>
                       <Field label="Categoria">
                         <select value={a.categoria} onChange={(e) => onAtualizar(a.id, { categoria: e.target.value })}>
-                          {Object.entries(CATEGORIAS_DOC).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+                          {Object.entries(categorias).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
                         </select>
                       </Field>
                       <Field label="Validade (opcional)">
@@ -201,7 +202,7 @@ export default function Documentos({ anexos = [], onAdicionar, onAtualizar, onRe
         </div>
       )}
 
-      <Modal open={!!vendo} onClose={fecharVisualizacao} size="lg" title={vendo?.anexo.nome} subtitle={vendo && `${CATEGORIAS_DOC[vendo.anexo.categoria]?.label} · ${fmtTamanho(vendo.anexo.tamanho)}`}
+      <Modal open={!!vendo} onClose={fecharVisualizacao} size="lg" title={vendo?.anexo.nome} subtitle={vendo && `${categorias[vendo.anexo.categoria]?.label} · ${fmtTamanho(vendo.anexo.tamanho)}`}
         footer={vendo && (
           <>
             <a className="btn" href={vendo.url} target="_blank" rel="noreferrer"><Eye size={16} /> Abrir em nova aba</a>
