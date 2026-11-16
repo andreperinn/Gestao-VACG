@@ -253,6 +253,12 @@ declare
   v_emp_id  text;
   v_emp     text;
   v_acao    text;
+  -- Quem fez: o usuário logado ou, nas ações do conector do Claude (servidor com a chave
+  -- secreta), o usuário dono da chave, informado pelo servidor num cabeçalho da requisição
+  v_servidor boolean := coalesce(current_setting('role', true), '') = 'service_role'
+                        or coalesce(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '') = 'service_role';
+  v_uid     uuid := coalesce(auth.uid(), case when v_servidor then nullif(current_setting('request.headers', true)::jsonb ->> 'x-vacg-user-id', '')::uuid end);
+  v_via     text := case when v_servidor and auth.uid() is null then ' · via Claude' else '' end;
 begin
   -- Gravação sem mudança real (o app regrava a empresa inteira ao salvar)
   if tg_op = 'UPDATE' and (v_depois - 'atualizado_em') = (v_antes - 'atualizado_em') then
@@ -290,8 +296,8 @@ begin
 
   insert into public.atividades (user_id, usuario, acao, tabela, registro_id, empresa_id, empresa_nome, descricao, antes, depois)
   values (
-    auth.uid(),
-    (select nome from public.perfis where user_id = auth.uid()),
+    v_uid,
+    (select nome from public.perfis where user_id = v_uid) || v_via,
     v_acao,
     tg_table_name,
     coalesce(v_reg ->> 'id', v_reg ->> 'empresa_id'),
@@ -412,6 +418,50 @@ create policy "documentos_le" on storage.objects for select to authenticated usi
 create policy "documentos_envia" on storage.objects for insert to authenticated with check (bucket_id = 'documentos' and public.usuario_ativo());
 create policy "documentos_altera" on storage.objects for update to authenticated using (bucket_id = 'documentos' and public.usuario_ativo());
 create policy "documentos_exclui" on storage.objects for delete to authenticated using (bucket_id = 'documentos' and public.usuario_ativo());
+
+-- ---------- Conector do Claude (MCP) ----------
+-- Cada pessoa ganha uma chave para o conector do Claude (api/mcp.js). Só o hash
+-- da chave fica guardado; a chave em si aparece uma única vez, ao ser criada.
+-- O servidor do conector consulta esta tabela com a chave secreta do Supabase.
+create table if not exists public.mcp_tokens (
+  id          text primary key,
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  nome        text not null,
+  token_hash  text not null unique,
+  prefixo     text,
+  criado_em   timestamptz not null default now(),
+  criado_por  uuid default auth.uid() references auth.users (id) on delete set null,
+  ultimo_uso  timestamptz,
+  revogado    boolean not null default false
+);
+alter table public.mcp_tokens enable row level security;
+drop policy if exists "mcp_tokens_admin" on public.mcp_tokens;
+create policy "mcp_tokens_admin" on public.mcp_tokens for all to authenticated
+  using (public.eh_admin()) with check (public.eh_admin());
+
+-- ---------- Despertador (evita a pausa do plano gratuito) ----------
+-- Chamado todo dia pela Vercel (api/manter-ativo.js). Grava a data do último
+-- sinal: uma escrita real no banco, que o Supabase conta como uso do projeto.
+create table if not exists public.sistema_sinal (
+  id      integer primary key default 1 check (id = 1),
+  em      timestamptz not null default now(),
+  origem  text
+);
+alter table public.sistema_sinal enable row level security;
+-- Sem políticas: ninguém lê ou altera direto pela API, só pela função abaixo.
+
+create or replace function public.manter_ativo(p_origem text default 'desconhecida')
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare v_em timestamptz;
+begin
+  insert into public.sistema_sinal (id, em, origem) values (1, now(), left(p_origem, 40))
+  on conflict (id) do update set em = excluded.em, origem = excluded.origem
+  returning em into v_em;
+  return v_em;
+end $$;
+
+revoke all on function public.manter_ativo(text) from public;
+grant execute on function public.manter_ativo(text) to anon, authenticated;
 
 -- ---------- Tempo real (celular e computador sincronizados) ----------
 do $$

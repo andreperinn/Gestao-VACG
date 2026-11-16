@@ -16,7 +16,7 @@ import EmpresaDetalhe from './pages/EmpresaDetalhe';
 import Agenda from './pages/Agenda';
 import Alertas from './pages/Alertas';
 import Dados from './pages/Dados';
-import Login, { NovaSenha, Carregando, Bloqueado, AlterarSenha } from './pages/Login';
+import Login, { NovaSenha, Carregando, Bloqueado, AlterarSenha, ServidorIndisponivel } from './pages/Login';
 import Equipe from './pages/Equipe';
 import CarPainel from './pages/CarPainel';
 import CarImoveis from './pages/CarImoveis';
@@ -28,6 +28,7 @@ export default function App() {
     if (recuperandoSenha) return <NovaSenha />;
     if (fase === 'sem-sessao') return <Login />;
     if (fase === 'bloqueado') return <Bloqueado />;
+    if (fase === 'offline') return <ServidorIndisponivel />;
     if (fase !== 'pronto') return <Carregando />;
   }
   return (

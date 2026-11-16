@@ -1,0 +1,18 @@
+# Reserva do despertador da Vercel: chama o mesmo endereço todo dia,
+# para o projeto do Supabase (plano gratuito) não ser pausado por inatividade.
+name: Manter banco ativo
+
+on:
+  schedule:
+    - cron: '30 21 * * *'   # todo dia às 18h30 (horário de Brasília)
+  workflow_dispatch:         # permite rodar na mão pela aba Actions
+
+jobs:
+  sinal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar sinal ao banco
+        run: |
+          resposta=$(curl -s -w '\n%{http_code}' --max-time 60 "https://vacg-gestao.vercel.app/api/manter-ativo?origem=github")
+          echo "$resposta"
+          test "$(echo "$resposta" | tail -n1)" = "200"

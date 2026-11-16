@@ -1005,3 +1005,9 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; padding:
   .doc-input, .area-input { width: 100%; }
   .linha-lista { padding-bottom: 10px; border-bottom: 1px dashed var(--border); }
 }
+
+/* Conector do Claude */
+.passos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; color: var(--text-2); }
+.passos li { line-height: 1.5; }
+.chave-gerada { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px; border-radius: 10px; border: 1px dashed var(--primary); background: var(--primary-soft); color: var(--text); font-size: 12px; text-align: left; overflow-wrap: anywhere; word-break: break-all; }
+.chave-gerada svg { flex-shrink: 0; color: var(--primary); }

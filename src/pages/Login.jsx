@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Leaf, Mail, Lock, LogIn, ArrowLeft, KeyRound, ShieldCheck, FlaskConical, CalendarClock } from 'lucide-react';
+import { Leaf, Mail, Lock, LogIn, ArrowLeft, KeyRound, ShieldCheck, FlaskConical, CalendarClock, CloudOff, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { Field, Modal, useUI } from '../components/ui';
 
@@ -124,6 +124,27 @@ export function NovaSenha() {
           {erro && <div className="login-erro">{erro}</div>}
           <button type="submit" className="btn btn-primary btn-block btn-lg"><KeyRound size={18} /> Salvar senha</button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Banco de dados não respondeu (ex.: projeto do Supabase pausado ou religando)
+export function ServidorIndisponivel() {
+  return (
+    <div className="login">
+      <div className="login-main">
+        <div className="login-card">
+          <div className="empty-icon"><CloudOff size={28} /></div>
+          <h2>Servidor indisponível</h2>
+          <p className="muted">
+            O banco de dados não respondeu. Se o projeto estiver sendo religado, aguarde alguns minutos e tente de novo.
+            Seus dados continuam guardados.
+          </p>
+          <button className="btn btn-primary btn-block btn-lg" onClick={() => window.location.reload()}>
+            <RefreshCw size={18} /> Tentar de novo
+          </button>
+        </div>
       </div>
     </div>
   );

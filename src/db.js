@@ -331,6 +331,34 @@ export async function salvarPerfil(p) {
   ok(await supabase.from('perfis').update({ nome: p.nome, papel: p.papel, ativo: p.ativo }).eq('user_id', p.user_id));
 }
 
+// ---------- Chaves do conector do Claude (MCP) — só administradores ----------
+async function sha256Hex(texto) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function carregarChavesMcp() {
+  return ok(await supabase.from('mcp_tokens').select('id, user_id, nome, prefixo, criado_em, ultimo_uso, revogado').order('criado_em', { ascending: false }));
+}
+
+// Gera a chave no navegador; só o hash vai para o banco. A chave é devolvida uma única vez.
+export async function criarChaveMcp(userId, nome) {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = 'vacg_' + btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  ok(await supabase.from('mcp_tokens').insert({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    nome,
+    token_hash: await sha256Hex(token),
+    prefixo: token.slice(0, 10),
+  }));
+  return token;
+}
+
+export async function revogarChaveMcp(id) {
+  ok(await supabase.from('mcp_tokens').update({ revogado: true }).eq('id', id));
+}
+
 // ---------- Registro de atividades (só administradores leem) ----------
 export async function registrarEntrada(userId, nome) {
   await supabase.from('atividades').insert({ user_id: userId, usuario: nome, acao: 'entrou', descricao: 'Entrou no sistema' });

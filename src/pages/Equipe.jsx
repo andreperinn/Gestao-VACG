@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Users, History, RefreshCw, ChevronDown, LogIn, Building2, CalendarClock, ClipboardCheck, Paperclip, Wallet,
-  ShieldCheck, UserPlus, Info, Trees,
+  ShieldCheck, UserPlus, Info, Trees, Bot, KeyRound, Copy, Ban, Plus,
 } from 'lucide-react';
 import { useStore } from '../store';
-import { useUI, Tabs, Chips, EmptyState, Badge } from '../components/ui';
+import { useUI, Tabs, Chips, EmptyState, Badge, Modal, Field } from '../components/ui';
 import * as db from '../db';
 import { corDe, fmtData, MESES } from '../utils';
 import { SITUACOES_CAR, CONDICOES_CAR, BIOMAS_RL, SITUACOES_RL } from '../car';
@@ -199,9 +199,12 @@ export default function Equipe() {
         tabs={[
           { id: 'atividades', label: 'Atividades', icon: History },
           { id: 'usuarios', label: 'Usuários', icon: Users, count: perfis.length },
+          { id: 'claude', label: 'Conector do Claude', icon: Bot },
         ]}
       />
-      {tab === 'atividades' ? <Atividades perfis={perfis} /> : <Usuarios perfis={perfis} recarregar={carregarPerfis} />}
+      {tab === 'atividades' && <Atividades perfis={perfis} />}
+      {tab === 'usuarios' && <Usuarios perfis={perfis} recarregar={carregarPerfis} />}
+      {tab === 'claude' && <ConectorClaude perfis={perfis} />}
     </div>
   );
 }
@@ -460,6 +463,158 @@ function Usuarios({ perfis, recarregar }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- Aba: conector do Claude (MCP) ----------
+const URL_MCP = 'https://vacg-gestao.vercel.app/api/mcp';
+
+function ConectorClaude({ perfis }) {
+  const { toast, confirm } = useUI();
+  const [chaves, setChaves] = useState([]);
+  const [criando, setCriando] = useState(false);
+  const [pessoa, setPessoa] = useState('');
+  const [nomeChave, setNomeChave] = useState('');
+  const [novaChave, setNovaChave] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const nomes = Object.fromEntries(perfis.map((p) => [p.user_id, p.nome || p.email]));
+
+  const carregar = useCallback(async () => {
+    try {
+      setChaves(await db.carregarChavesMcp());
+    } catch (e) {
+      toast(`Erro ao carregar as chaves: ${e.message}`, 'error');
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const gerar = async (e) => {
+    e.preventDefault();
+    if (!pessoa) return toast('Escolha a pessoa', 'error');
+    setSalvando(true);
+    try {
+      const token = await db.criarChaveMcp(pessoa, nomeChave.trim() || `Claude de ${nomes[pessoa]}`);
+      setCriando(false);
+      setNovaChave({ token, pessoa: nomes[pessoa] });
+      setPessoa('');
+      setNomeChave('');
+      carregar();
+    } catch (err) {
+      toast(`Não foi possível gerar a chave: ${err.message}`, 'error');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const revogar = async (c) => {
+    const ok = await confirm({ title: 'Revogar chave?', message: `"${c.nome}" deixa de funcionar na hora. O Claude dessa pessoa perde o acesso ao sistema.`, confirmLabel: 'Revogar' });
+    if (!ok) return;
+    try {
+      await db.revogarChaveMcp(c.id);
+      toast('Chave revogada', 'info');
+      carregar();
+    } catch (err) {
+      toast(`Erro: ${err.message}`, 'error');
+    }
+  };
+
+  const copiar = async (texto, msg) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast(msg);
+    } catch {
+      toast('Não foi possível copiar', 'error');
+    }
+  };
+
+  const ativas = chaves.filter((c) => !c.revogado);
+
+  return (
+    <div className="usuarios">
+      <div className="banner banner-info">
+        <Bot size={18} />
+        <span>
+          Com o conector, a pessoa usa o <b>app do Claude</b> (celular ou computador) para conversar com o sistema: mandar foto de
+          um documento e cadastrar a empresa ou o imóvel, perguntar o que vence no mês, concluir eventos… Cada pessoa usa a
+          <b> própria chave</b>, com as mesmas permissões do perfil dela. Tudo aparece em Atividades como "via Claude".
+        </span>
+      </div>
+
+      <div className="row-between wrap gap">
+        <h3>Chaves de acesso</h3>
+        <button className="btn btn-primary" onClick={() => setCriando(true)}><Plus size={16} /> Gerar chave</button>
+      </div>
+
+      {ativas.length === 0 ? (
+        <EmptyState icon={KeyRound} title="Nenhuma chave ativa" text="Gere uma chave para cada pessoa que vai usar o Claude com o sistema." />
+      ) : (
+        <div className="card lista-usuarios">
+          {ativas.map((c) => (
+            <div key={c.id} className="usuario-linha">
+              <Pessoa nome={nomes[c.user_id] || '?'} size={42} />
+              <div className="grow usuario-info">
+                <strong>{c.nome}</strong>
+                <span className="muted small">
+                  {nomes[c.user_id] || 'Usuário removido'} · <span className="mono">{c.prefixo}…</span> · criada {fmtData(c.criado_em.slice(0, 10))}
+                  {' · '}{c.ultimo_uso ? `último uso ${rotuloDia(c.ultimo_uso).toLowerCase()} às ${hora(c.ultimo_uso)}` : 'ainda não usada'}
+                </span>
+              </div>
+              <button className="btn btn-sm btn-ghost-danger" onClick={() => revogar(c)}><Ban size={15} /> Revogar</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="card permissoes">
+        <h3>Como conectar no Claude</h3>
+        <ol className="passos">
+          <li>No Claude (claude.ai ou app no computador), abra <b>Configurações → Conectores</b>.</li>
+          <li>Clique em <b>Adicionar → Adicionar conector personalizado</b>.</li>
+          <li>
+            Nome: <b>VACG</b> · URL:{' '}
+            <button className="codigo-car" onClick={() => copiar(URL_MCP, 'Endereço copiado')}><span className="mono">{URL_MCP}</span> <Copy size={13} /></button>
+          </li>
+          <li>Em <b>Autenticação</b>, escolha <b>sem login</b> ("No sign in") e, em <b>Cabeçalhos da requisição</b> ("Request headers"), adicione <span className="mono">Authorization</span> com o valor <span className="mono">Bearer</span> + espaço + a chave da pessoa.</li>
+          <li>Salve. Depois de configurado, o conector também funciona no app do Claude no celular.</li>
+        </ol>
+      </div>
+
+      <Modal open={criando} onClose={() => setCriando(false)} size="sm" icon={<KeyRound size={20} />} title="Gerar chave do conector"
+        footer={
+          <>
+            <button className="btn" onClick={() => setCriando(false)}>Cancelar</button>
+            <button type="submit" form="form-chave" className="btn btn-primary" disabled={salvando}>{salvando ? 'Gerando…' : 'Gerar chave'}</button>
+          </>
+        }>
+        <form id="form-chave" className="form-body" onSubmit={gerar}>
+          <Field label="Para quem é a chave">
+            <select value={pessoa} onChange={(e) => setPessoa(e.target.value)} autoFocus>
+              <option value="">Escolha a pessoa…</option>
+              {perfis.filter((p) => p.ativo).map((p) => <option key={p.user_id} value={p.user_id}>{p.nome || p.email} ({p.papel === 'admin' ? 'admin' : 'colaborador'})</option>)}
+            </select>
+          </Field>
+          <Field label="Nome da chave (opcional)" hint="Para saber onde ela está em uso, ex.: Claude do celular do pai">
+            <input value={nomeChave} onChange={(e) => setNomeChave(e.target.value)} placeholder="Claude do celular" />
+          </Field>
+        </form>
+      </Modal>
+
+      <Modal open={!!novaChave} onClose={() => setNovaChave(null)} size="sm" icon={<KeyRound size={20} />} title="Chave gerada"
+        footer={<button className="btn btn-primary" onClick={() => setNovaChave(null)}>Já copiei</button>}>
+        {novaChave && (
+          <div className="form-body">
+            <p>Chave de <b>{novaChave.pessoa}</b>. <b>Copie agora:</b> por segurança, ela não aparece de novo. Se perder, é só revogar e gerar outra.</p>
+            <button className="chave-gerada mono" onClick={() => copiar(`Bearer ${novaChave.token}`, 'Valor do cabeçalho copiado')}>
+              Bearer {novaChave.token} <Copy size={14} />
+            </button>
+            <p className="muted small">Esse é o valor completo do cabeçalho <span className="mono">Authorization</span> no conector do Claude. Não compartilhe: quem tiver a chave acessa o sistema como essa pessoa.</p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

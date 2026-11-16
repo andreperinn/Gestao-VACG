@@ -56,9 +56,15 @@ export function StoreProvider({ children }) {
   // Sessão de login
   useEffect(() => {
     if (!NUVEM) return;
+    // Se o servidor não responder (ex.: projeto pausado), o Supabase fica tentando
+    // renovar a sessão sem parar. Depois de alguns segundos, avisa em vez de travar.
+    const limite = setTimeout(() => setFase((f) => (f === 'iniciando' || f === 'carregando' ? 'offline' : f)), 12000);
     supabase.auth.getSession().then(({ data }) => {
       setSessao(data.session);
-      if (!data.session) setFase('sem-sessao');
+      if (!data.session) {
+        clearTimeout(limite);
+        setFase('sem-sessao');
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       setSessao(s);
@@ -70,7 +76,10 @@ export function StoreProvider({ children }) {
         db.definirFinanceiro(false);
       }
     });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      clearTimeout(limite);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const recarregar = useCallback(async () => {
@@ -96,8 +105,10 @@ export function StoreProvider({ children }) {
       let p = null;
       try {
         p = await db.carregarMeuPerfil(userId);
-      } catch (e) {
-        toast(`Erro ao carregar o perfil: ${e.message}`, 'error');
+      } catch {
+        // Sem resposta do servidor: não é falta de acesso, é o banco fora do ar
+        if (vivo) setFase('offline');
+        return;
       }
       if (!vivo) return;
       if (!p?.ativo) {
